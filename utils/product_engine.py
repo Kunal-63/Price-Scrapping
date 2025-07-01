@@ -78,11 +78,14 @@ class ProductSearchEngine:
         async def fetch(scraper, name):
             try:
                 result = await scraper.search(final_query)
-                logger.info(f"{name} Results: {len(result)} items found")
+                if isinstance(result, dict) and "active" in result:
+                    logger.info(f"{name} Results: {len(result['active'])} active, {len(result['sold'])} sold")
+                else:
+                    logger.info(f"{name} Results: {len(result)} items found")
                 return result
             except Exception as e:
                 logger.error(f"Error fetching from {name}: {e}")
-                return []
+                return {"active": [], "sold": []} if name == "eBay" else []
 
         results = await asyncio.gather(
             fetch(self.ebay_scraper, "eBay"),

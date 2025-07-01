@@ -11,7 +11,7 @@ class EbayScraper:
     def __init__(self, scrapfly_key):
         self.client = ScrapflyClient(key=scrapfly_key)
         self.logger = get_logger()
-        self.MAX_CONCURRENT_DETAIL_FETCHES = 1
+        self.MAX_CONCURRENT_DETAIL_FETCHES = 2
 
     async def search(self, query):
         self.logger.info(f"🔍 Starting eBay search for: {query}")
@@ -100,6 +100,7 @@ class EbayScraper:
     
     async def _fetch_with_details(self, url, base_data, sem):
         async with sem:
+            await asyncio.sleep(1)
             details = await self.get_product_details(url)
             base_data["description"] = details.get("description")
             base_data["item_specifics"] = details.get("item_specifics", {})
@@ -202,7 +203,7 @@ class EbayScraper:
                 wait_for_selector="#itemTitle",
                 session=Utility.generate_random_session(),
                 retry=False,
-                timeout=60000,
+                timeout=120000,
                 country="US",
                 # wait_for_browser=True
             ))

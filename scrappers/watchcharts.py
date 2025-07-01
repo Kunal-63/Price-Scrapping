@@ -93,6 +93,7 @@ class WatchChartsScraper:
                 session=Utility.generate_random_session(),
                 proxy_pool="public_residential_pool",
                 country="US",
+                timeout=120000,
                 retry=False
             ))
 
