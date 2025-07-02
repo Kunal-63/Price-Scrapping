@@ -48,7 +48,7 @@ class ProductSearchEngine:
         self.farfetch = FarfetchScraper(client)
         self.google_shopping = GoogleShoppingScraper(client)
 
-    async def search(self, query: str = None, image_url: str = None):
+    async def search(self, query: str = None, image_url: str = None, category: str = None, product_id: str = None):
         final_query = None
 
         if image_url:
@@ -77,7 +77,7 @@ class ProductSearchEngine:
 
         async def fetch(scraper, name):
             try:
-                result = await scraper.search(final_query)
+                result = await scraper.search(final_query, category, product_id)
                 if isinstance(result, dict) and "active" in result:
                     logger.info(f"{name} Results: {len(result['active'])} active, {len(result['sold'])} sold")
                 else:
@@ -89,35 +89,35 @@ class ProductSearchEngine:
 
         results = await asyncio.gather(
             fetch(self.ebay_scraper, "eBay"),
-            fetch(self.stockx_scraper, "StockX"),
-            # fetch(self.goat_scraper, "Goat"),
-            # fetch(self.flightclub, "Flight Club"),
-            fetch(self.watchcharts, "WatchCharts"),
-            fetch(self.chrono24, "Chrono24"),
-            fetch(self.fashionphile, "Fashionphile"),
-            fetch(self.realreal, "The RealReal"),
-            fetch(self.rebag, "Rebag"),
-            fetch(self.vestiaire, "Vestiaire"),
-            fetch(self.grailed, "Grailed"),
-            fetch(self.farfetch, "Farfetch"),
-            fetch(self.serpapi_searcher, "Google Shopping")
+            # fetch(self.stockx_scraper, "StockX"),
+            # # fetch(self.goat_scraper, "Goat"),
+            # # fetch(self.flightclub, "Flight Club"),
+            # fetch(self.watchcharts, "WatchCharts"),
+            # fetch(self.chrono24, "Chrono24"),
+            # fetch(self.fashionphile, "Fashionphile"),
+            # fetch(self.realreal, "The RealReal"),
+            # fetch(self.rebag, "Rebag"),
+            # fetch(self.vestiaire, "Vestiaire"),
+            # fetch(self.grailed, "Grailed"),
+            # fetch(self.farfetch, "Farfetch"),
+            # fetch(self.serpapi_searcher, "Google Shopping")
         )
 
         combined = {
             "query": final_query,
             "ebay_results": results[0],
-            "stockx_results": results[1],
-            # "goat_results": results[2],
-            # "flightclub_results": results[3],
-            "watchcharts_results": results[2],
-            "chrono24_results": results[3],
-            "fashionphile_results": results[4],
-            "realreal_results": results[5],
-            "rebag_results": results[6],
-            "vestiaire_results": results[7],
-            "grailed_results": results[8],
-            "farfetch_results": results[9],
-            "google_shopping_results": results[10]
+            # "stockx_results": results[1],
+            # # "goat_results": results[2],
+            # # "flightclub_results": results[3],
+            # "watchcharts_results": results[2],
+            # "chrono24_results": results[3],
+            # "fashionphile_results": results[4],
+            # "realreal_results": results[5],
+            # "rebag_results": results[6],
+            # "vestiaire_results": results[7],
+            # "grailed_results": results[8],
+            # "farfetch_results": results[9],
+            # "google_shopping_results": results[10]
         }
 
         logger.info("Final Combined Results prepared.")

@@ -4,7 +4,6 @@ from pydantic import BaseModel, HttpUrl
 from typing import Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from config.database import async_session
-from models.product_item import Product
 from schemas.product_item import ProductItem
 from sqlalchemy.future import select
 import asyncio
@@ -17,7 +16,9 @@ logger = get_logger()
 
 class SearchInput(BaseModel):
     query: Optional[str] = None
+    category: Optional[str] = None
     image_url: Optional[HttpUrl] = None
+    product_id: Optional[str] = None
 
 
 @router.post("/search/")
@@ -29,7 +30,7 @@ async def search_and_store(input_data: SearchInput):
 
     # Do the product search
     try:
-        combined = await engine.search(query=input_data.query, image_url=input_data.image_url)
+        combined = await engine.search(query=input_data.query, image_url=input_data.image_url, category=input_data.category, product_id=input_data.product_id)
     except Exception as e:
         logger.exception("Search failed")
         return {"error": str(e)}
