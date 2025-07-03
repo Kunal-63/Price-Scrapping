@@ -41,7 +41,7 @@ if __name__ == "__main__":
 
     # Product and metadata tables
     create_table_if_not_exists(dynamodb, "ProductsTable", "url")
-    create_table_if_not_exists(dynamodb, "ShoesTable", "product_id")
-    create_table_if_not_exists(dynamodb, "BagsTable", "product_id")
-    create_table_if_not_exists(dynamodb, "AccessoriesTable", "product_id")
-    create_table_if_not_exists(dynamodb, "ClothingTable", "product_id")
+    create_table_if_not_exists(dynamodb, "ShoesTable", "id")
+    create_table_if_not_exists(dynamodb, "BagsTable", "id")
+    create_table_if_not_exists(dynamodb, "AccessoriesTable", "id")
+    create_table_if_not_exists(dynamodb, "ClothingTable", "id")

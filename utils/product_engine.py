@@ -44,7 +44,7 @@ class ProductSearchEngine:
         self.realreal = RealRealScraper(Config.SCRAPFLY_KEY)
         self.rebag = RebagScraper(Config.SCRAPFLY_KEY)
         self.vestiaire = VestiaireScraper(Config.SCRAPFLY_KEY)
-        self.grailed = GrailedScraper(client)
+        self.grailed = GrailedScraper(Config.SCRAPFLY_KEY)
         self.farfetch = FarfetchScraper(client)
         self.google_shopping = GoogleShoppingScraper(client)
 
@@ -88,11 +88,11 @@ class ProductSearchEngine:
                 return {"active": [], "sold": []} if name == "eBay" else []
 
         results = await asyncio.gather(
-            fetch(self.ebay_scraper, "eBay"),
+            # fetch(self.ebay_scraper, "eBay"),
             # fetch(self.stockx_scraper, "StockX"),
             # # fetch(self.goat_scraper, "Goat"),
             # # fetch(self.flightclub, "Flight Club"),
-            # fetch(self.watchcharts, "WatchCharts"),
+            fetch(self.watchcharts, "WatchCharts"),
             # fetch(self.chrono24, "Chrono24"),
             # fetch(self.fashionphile, "Fashionphile"),
             # fetch(self.realreal, "The RealReal"),
@@ -105,7 +105,8 @@ class ProductSearchEngine:
 
         combined = {
             "query": final_query,
-            "ebay_results": results[0],
+            "testing": results[0],
+            # "ebay_results": results[0],
             # "stockx_results": results[1],
             # # "goat_results": results[2],
             # # "flightclub_results": results[3],

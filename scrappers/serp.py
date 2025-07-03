@@ -5,12 +5,29 @@ import httpx
 from bs4 import BeautifulSoup
 from config.scrapper_config import Config
 from utils.logger import get_logger
+from utils.utility import Utility
+from boto3.session import Session
+from boto3.dynamodb.conditions import Attr
+from models.product_item import ProductModel
+from models.shoes import ShoesModel
+from models.bags import BagsModel
+from models.accessories import AccessoriesModel
+from models.clothing import ClothingModel
+
 
 class SerpAPISearcher:
     def __init__(self):
         self.logger = get_logger()
+        session = Session(profile_name="auricore-dev-kunal")
+        dynamodb = session.resource("dynamodb", region_name="us-east-2")
+        self.product_table = dynamodb.Table("ProductsTable")
+        self.shoes_table = dynamodb.Table("ShoesTable")
+        self.bags_table = dynamodb.Table("BagsTable")
+        self.accessories_table = dynamodb.Table("AccessoriesTable")
+        self.clothing_table = dynamodb.Table("ClothingTable")
 
-    async def search(self, query, max_items=10):
+
+    async def search(self, query, category, product_id):
         self.logger.info(f"🔍 Searching SerpAPI for query: {query}")
 
         params = {
@@ -24,7 +41,7 @@ class SerpAPISearcher:
             async with httpx.AsyncClient(timeout=10) as client:
                 res = await client.get("https://serpapi.com/search.json", params=params)
                 res.raise_for_status()
-                products = res.json().get("shopping_results", [])[:max_items]
+                products = res.json().get("shopping_results", [])
 
             results = []
             detail_tasks = []
@@ -60,7 +77,11 @@ class SerpAPISearcher:
             detail_results = await asyncio.gather(*detail_tasks, return_exceptions=True)
 
             for i, detail in enumerate(detail_results):
-                results[i]["item_details"] = detail if isinstance(detail, dict) else {}
+                item = results[i]
+                item["item_details"] = detail if isinstance(detail, dict) else {}
+                item["product_id"] = product_id
+                item["category"] = category
+                self.insert_or_update_product(item, category)
 
             self.logger.info(f"✅ Google Shopping results fetched: {len(results)}")
             return results
@@ -103,3 +124,45 @@ class SerpAPISearcher:
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to fetch/parse product details from: {url} | {e}")
             return {}
+
+    def insert_or_update_product(self, base_data: dict, category: str):
+        existing = self.product_table.scan(
+            FilterExpression=Attr("url").eq(base_data["url"])
+        )
+
+        product = ProductModel(base_data, category)
+
+        if existing["Items"]:
+            self.logger.info(f"🔄 Updating existing product in DB: {base_data['url']}")
+        else:
+            self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
+
+        self.product_table.put_item(Item=product.to_dict())
+
+        details = base_data.get("item_details", {})
+        specs = {
+            "Brand": base_data.get("seller"),
+            "Condition": base_data.get("condition", "Unknown"),
+            "Year": details.get("year", "Unknown"),
+            "Size": details.get("size") or details.get("product_dimensions"),
+            "Color": details.get("color"),
+            "Shape": details.get("shape"),
+            "Closure": details.get("closure"),
+            "Box/Papers": None,
+            "Dust Bag": details.get("description"),
+        }
+
+        if category == "Shoes":
+            meta = ShoesModel(product.product_id, specs)
+            self.shoes_table.put_item(Item=meta.to_dict())
+        elif category == "Bags":
+            meta = BagsModel(product.product_id, specs)
+            self.bags_table.put_item(Item=meta.to_dict())
+        elif category == "Accessories":
+            meta = AccessoriesModel(product.product_id, specs)
+            self.accessories_table.put_item(Item=meta.to_dict())
+        elif category == "Clothing":
+            meta = ClothingModel(product.product_id, specs)
+            self.clothing_table.put_item(Item=meta.to_dict())
+        else:
+            self.logger.warning(f"❌ Unknown category: {category}, skipping metadata.")

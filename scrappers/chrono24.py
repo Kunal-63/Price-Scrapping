@@ -1,22 +1,40 @@
 import json
 from urllib.parse import quote
-from scrapfly import ScrapflyClient, ScrapeConfig
+from scrapfly import ScrapflyClient, ScrapeConfig, ScrapflyScrapeError
 from bs4 import BeautifulSoup
 from utils.logger import get_logger
 import asyncio
 from utils.utility import Utility
+from datetime import datetime
+import uuid
+import re
+import backoff
+from boto3.session import Session
+from models.product_item import ProductModel
+from models.shoes import ShoesModel
+from models.bags import BagsModel
+from models.accessories import AccessoriesModel
+from models.clothing import ClothingModel
 
 class Chrono24Scraper:
     def __init__(self, scrapfly_key):
         self.client = ScrapflyClient(key=scrapfly_key)
         self.logger = get_logger()
 
-    async def search(self, query):
+        session = Session(profile_name="auricore-dev-kunal")
+        dynamodb = session.resource("dynamodb", region_name="us-east-2")
+        self.product_table = dynamodb.Table("ProductsTable")
+        self.shoes_table = dynamodb.Table("ShoesTable")
+        self.bags_table = dynamodb.Table("BagsTable")
+        self.accessories_table = dynamodb.Table("AccessoriesTable")
+        self.clothing_table = dynamodb.Table("ClothingTable")
+
+    async def search(self, query, category, product_id):
         url = f"https://www.chrono24.com/search/index.htm?dosearch=true&query={quote(query)}"
         self.logger.info(f"📡 Fetching Chrono24 results for query: {query}")
 
         try:
-            resp = await self.client.async_scrape(ScrapeConfig(
+            resp = await self.scrape_with_retries(ScrapeConfig(
                 url=url,
                 asp=True,
                 render_js=False,
@@ -38,8 +56,7 @@ class Chrono24Scraper:
         html = resp.scrape_result.get("content", "")
         soup = BeautifulSoup(html, "html.parser")
 
-        results = []
-        detail_tasks = []
+        results, detail_tasks = [], []
 
         for script in soup.find_all("script", {"type": "application/ld+json"}):
             try:
@@ -48,44 +65,54 @@ class Chrono24Scraper:
                     for node in data["@graph"]:
                         if node.get("@type") == "AggregateOffer" and "offers" in node:
                             for offer in node["offers"]:
-                                product_url = offer.get("url", "").strip()
-                                item = {
+                                url = offer.get("url", "").strip()
+                                if not url:
+                                    continue
+
+                                base_data = {
                                     "title": offer.get("name", "").strip(),
-                                    "price": str(offer.get("price", "")).strip(),
-                                    "url": product_url,
-                                    "image": (
-                                        offer.get("image", {}).get("contentUrl", "")
+                                    "product_id": product_id,
+                                    "listing_price": re.sub(r"[^\d.]", "", str(offer.get("price", ""))),
+                                    "url": url,
+                                    "image_url": offer.get("image", {}).get("contentUrl")
                                         if isinstance(offer.get("image"), dict)
-                                        else offer.get("image", "")
-                                    ),
-                                    "site": "Chrono24"
+                                        else offer.get("image", None),
+                                    "condition": offer.get("itemCondition", "Used"),
+                                    "seller": offer.get("seller", {}).get("name", "Unknown"),
+                                    "shipping": "Varies",
+                                    "location": "Unknown",
+                                    "top_rated": False,
+                                    "source": "chrono24",
+                                    "category": category
                                 }
 
-                                results.append(item)
-                                if product_url:
-                                    detail_tasks.append(self.get_product_detail(product_url))
-                                else:
-                                    detail_tasks.append(asyncio.sleep(0, result={}))  # fallback
+                                results.append(base_data)
+                                detail_tasks.append(self.get_product_detail(url))
+
             except json.JSONDecodeError:
                 self.logger.warning("⚠️ Skipped invalid JSON script tag")
 
         self.logger.info(f"🧵 Fetching details for {len(detail_tasks)} items concurrently...")
-
-        # Concurrently fetch product details
         details_list = await asyncio.gather(*detail_tasks, return_exceptions=True)
 
-        for item, detail in zip(results, details_list):
-            item["item_details"] = detail if isinstance(detail, dict) else {}
+        for base_data, detail in zip(results, details_list):
+            if isinstance(detail, dict):
+                base_data["item_specifics"] = detail
+                self.insert_or_update_product(base_data, category)
 
-        self.logger.info(f"✅ Found {len(results)} Chrono24 items with details")
+        self.logger.info(f"✅ Chrono24 items inserted: {len(results)}")
         return results
 
-    async def get_product_detail(self, product_url):
-        self.logger.info(f"🔍 Fetching product detail from: {product_url}")
+    @backoff.on_exception(backoff.expo, ScrapflyScrapeError, max_tries=5)
+    async def scrape_with_retries(self, config):
+        self.logger.debug(f"⏳ Scraping URL: {config.url}")
+        return await self.client.async_scrape(config)
 
+    async def get_product_detail(self, url):
+        self.logger.info(f"🔍 Fetching product detail from: {url}")
         try:
-            resp = await self.client.async_scrape(ScrapeConfig(
-                url=product_url,
+            resp = await self.scrape_with_retries(ScrapeConfig(
+                url=url,
                 asp=True,
                 render_js=False,
                 country="US",
@@ -109,24 +136,82 @@ class Chrono24Scraper:
     def extract_item_details(self, html: str) -> dict:
         soup = BeautifulSoup(html, "html.parser")
         item_details = {}
-
         table = soup.find("table")
         if not table:
             return item_details
 
-        # Go through all <tr> rows in the table
         for tr in table.find_all("tr"):
             tds = tr.find_all("td")
             if len(tds) == 2:
                 key = tds[0].get_text(strip=True).replace(":", "")
                 value = tds[1].get_text(" ", strip=True)
                 item_details[key] = value
-            elif len(tds) == 1 and tds[0].get("colspan") == "2":
-                # Optional: you can also track sections like "Case", "Bracelet/strap"
-                section_title = tds[0].find("h3")
-                if section_title:
-                    current_section = section_title.get_text(strip=True)
-            else:
-                continue
 
         return item_details
+
+    def insert_or_update_product(self, base_data: dict, category: str):
+        from boto3.dynamodb.conditions import Attr
+
+        existing = self.product_table.scan(
+            FilterExpression=Attr("url").eq(base_data["url"])
+        )
+
+        product = ProductModel(base_data, category)
+
+        if existing["Items"]:
+            self.logger.info(f"🔄 Updating existing product in DB: {base_data['url']}")
+        else:
+            self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
+
+        self.product_table.put_item(Item=product.to_dict())
+
+        specs = base_data.get("item_specifics", {})
+        if not specs:
+            self.logger.warning(f"⚠️ No item_specifics found for {base_data['url']}, skipping metadata insert.")
+            return
+
+        def clean_size(val):
+            return re.sub(r"[^\d.\smm]", "", val).strip() if val else None
+
+        if category == "Shoes":
+            meta = ShoesModel(product.product_id, {
+                "Brand": specs.get("Brand"),
+                "Condition": specs.get("Condition"),
+                "Year": specs.get("Year of production"),
+                "Colorway": specs.get("Dial") or specs.get("Bezel material"),
+                "Size": clean_size(specs.get("Case diameter")),
+                "Box/Papers": specs.get("Scope of delivery")
+            })
+            self.shoes_table.put_item(Item=meta.to_dict())
+
+        elif category == "Bags":
+            meta = BagsModel(product.product_id, {
+                "Brand": specs.get("Brand"),
+                "Condition": specs.get("Condition"),
+                "Year": specs.get("Year of production"),
+                "Size": clean_size(specs.get("Case diameter")),
+                "Color": specs.get("Dial") or specs.get("Bracelet color") or specs.get("Bezel material"),
+                "Box/Papers": specs.get("Scope of delivery"),
+                "Dust Bag": None
+            })
+            self.bags_table.put_item(Item=meta.to_dict())
+
+        elif category == "Accessories":
+            meta = AccessoriesModel(product.product_id, {
+                "Brand": specs.get("Brand"),
+                "Condition": specs.get("Condition"),
+                "Year": specs.get("Year of production")
+            })
+            self.accessories_table.put_item(Item=meta.to_dict())
+
+        elif category == "Clothing":
+            meta = ClothingModel(product.product_id, {
+                "Brand": specs.get("Brand"),
+                "Condition": specs.get("Condition"),
+                "Size": clean_size(specs.get("Case diameter"))
+            })
+            self.clothing_table.put_item(Item=meta.to_dict())
+
+        else:
+            self.logger.warning(f"❌ Unknown category: {category}, skipping metadata.")
+        self.logger.info(f"✅ Product metadata inserted for {base_data['url']} in category {category}")

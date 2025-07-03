@@ -7,13 +7,29 @@ from bs4 import BeautifulSoup
 from utils.utility import Utility
 from utils.logger import get_logger
 import asyncio
+from boto3.session import Session
+from boto3.dynamodb.conditions import Attr
+from models.product_item import ProductModel
+from models.bags import BagsModel
+from models.shoes import ShoesModel
+from models.accessories import AccessoriesModel
+from models.clothing import ClothingModel
+
 
 class RebagScraper:
     def __init__(self, scrapfly_key):
         self.client = ScrapflyClient(key=scrapfly_key)
         self.logger = get_logger()
 
-    async def search(self, query, max_items=10):
+        session = Session(profile_name="auricore-dev-kunal")
+        dynamodb = session.resource("dynamodb", region_name="us-east-2")
+        self.product_table = dynamodb.Table("ProductsTable")
+        self.bags_table = dynamodb.Table("BagsTable")
+        self.shoes_table = dynamodb.Table("ShoesTable")
+        self.accessories_table = dynamodb.Table("AccessoriesTable")
+        self.clothing_table = dynamodb.Table("ClothingTable")
+
+    async def search(self, query, category, product_id):
         self.logger.info(f"🔍 Searching Rebag for query: {query}")
         url = f"https://shop.rebag.com/collections/all?q={quote(query)}"
 
@@ -33,7 +49,7 @@ class RebagScraper:
             return []
 
         soup = BeautifulSoup(resp.scrape_result["content"], "html.parser")
-        cards = soup.select("div.plp__product")[:max_items]
+        cards = soup.select("div.plp__product")
 
         results = []
         detail_tasks = []
@@ -80,8 +96,11 @@ class RebagScraper:
         self.logger.info(f"🧵 Fetching {len(detail_tasks)} product details concurrently...")
         detail_results = await asyncio.gather(*detail_tasks, return_exceptions=True)
 
-        for result, detail in zip(results, detail_results):
-            result["item_details"] = detail if isinstance(detail, dict) else {}
+        for item, detail in zip(results, detail_results):
+            item["item_details"] = detail if isinstance(detail, dict) else {}
+            item["product_id"] = product_id
+            item["category"] = category
+            self.insert_or_update_product(item, category)
 
         self.logger.info(f"✅ Rebag results fetched: {len(results)}")
         return results
@@ -126,3 +145,50 @@ class RebagScraper:
         except Exception as e:
             self.logger.exception("❌ Failed to parse Rebag product detail content")
             return {}
+
+    def insert_or_update_product(self, base_data: dict, category: str):
+        existing = self.product_table.scan(
+            FilterExpression=Attr("url").eq(base_data["url"])
+        )
+
+        product = ProductModel(base_data, category)
+
+        if existing["Items"]:
+            self.logger.info(f"🔄 Updating existing product in DB: {base_data['url']}")
+        else:
+            self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
+
+        self.product_table.put_item(Item=product.to_dict())
+
+        details = base_data.get("item_details", {})
+        specs = {
+            "Brand": details.get("brand") or details.get("designer"),
+            "Condition": base_data.get("condition", "Unknown"),
+            "Size": details.get("size"),
+            "Color": details.get("color"),
+            "Box/Papers": details.get("original box"),
+            "Dust Bag": details.get("dust bag") or details.get("description"),
+            "Strap Drop": details.get("shoulder_strap_drop"),
+            "Handle Drop": details.get("handle_drop"),
+            "Height": details.get("height"),
+            "Width": details.get("width"),
+            "Depth": details.get("depth"),
+            "Gender": details.get("gender"),
+            "Item Code": details.get("item_#"),
+            "Condition Notes": details.get("condition_notes"),
+        }
+
+        if category == "Shoes":
+            meta = ShoesModel(product.product_id, specs)
+            self.shoes_table.put_item(Item=meta.to_dict())
+        elif category == "Bags":
+            meta = BagsModel(product.product_id, specs)
+            self.bags_table.put_item(Item=meta.to_dict())
+        elif category == "Accessories":
+            meta = AccessoriesModel(product.product_id, specs)
+            self.accessories_table.put_item(Item=meta.to_dict())
+        elif category == "Clothing":
+            meta = ClothingModel(product.product_id, specs)
+            self.clothing_table.put_item(Item=meta.to_dict())
+        else:
+            self.logger.warning(f"❌ Unknown category: {category}, skipping metadata.")

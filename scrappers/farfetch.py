@@ -1,18 +1,35 @@
 import re
+import uuid
+import json
+import asyncio
 from urllib.parse import quote
 from scrapfly import ScrapflyClient, ScrapeConfig
 from bs4 import BeautifulSoup
 from utils.utility import Utility
 from utils.logger import get_logger
-import json
-import asyncio
+from models.product_item import ProductModel
+from models.shoes import ShoesModel
+from models.bags import BagsModel
+from models.accessories import AccessoriesModel
+from models.clothing import ClothingModel
+from boto3.session import Session
+from boto3.dynamodb.conditions import Attr
+import datetime
 
 class FarfetchScraper:
     def __init__(self, client):
         self.client = client
         self.logger = get_logger()
 
-    async def search(self, query, max_pages=1, max_items=10):
+        session = Session(profile_name="auricore-dev-kunal")
+        dynamodb = session.resource("dynamodb", region_name="us-east-2")
+        self.product_table = dynamodb.Table("ProductsTable")
+        self.shoes_table = dynamodb.Table("ShoesTable")
+        self.bags_table = dynamodb.Table("BagsTable")
+        self.accessories_table = dynamodb.Table("AccessoriesTable")
+        self.clothing_table = dynamodb.Table("ClothingTable")
+
+    async def search(self, query, category, product_id):
         self.logger.info(f"🔍 Searching Farfetch for query: {query}")
         url = f"https://www.farfetch.com/shopping/men/items.aspx?query={quote(query)}"
 
@@ -38,7 +55,7 @@ class FarfetchScraper:
         results = []
         detail_tasks = []
 
-        for item in items[:max_items]:
+        for item in items:
             try:
                 brand = item.select_one("p[data-component='ProductCardBrandName']")
                 title = item.select_one("p[data-component='ProductCardDescription']")
@@ -51,7 +68,8 @@ class FarfetchScraper:
                     product_url = f"https://www.farfetch.com{link_tag['href']}"
                     image_url = image_tag["href"] if image_tag else None
 
-                    results.append({
+                    base_data = {
+                        "product_id": product_id,
                         "title": f"{brand.text.strip()} {title.text.strip()}",
                         "listing_price": price,
                         "url": product_url,
@@ -62,10 +80,10 @@ class FarfetchScraper:
                         "location": "Global",
                         "top_rated": True,
                         "source": "farfetch"
-                    })
+                    }
                     detail_tasks.append(self.get_product_details(product_url))
+                    results.append(base_data)
                 else:
-                    # In case of parsing issue, add dummy detail task
                     detail_tasks.append(asyncio.sleep(0, result={}))
 
             except Exception as e:
@@ -73,11 +91,13 @@ class FarfetchScraper:
                 detail_tasks.append(asyncio.sleep(0, result={}))
 
         self.logger.info(f"🧵 Fetching {len(detail_tasks)} product details concurrently...")
-
         detail_results = await asyncio.gather(*detail_tasks, return_exceptions=True)
 
         for item, detail in zip(results, detail_results):
             item["item_details"] = detail if isinstance(detail, dict) else {}
+            item["product_id"] = product_id
+            item["category"] = category
+            self.insert_or_update_product(item, category)
 
         self.logger.info(f"✅ Farfetch results fetched: {len(results)}")
         return results
@@ -168,3 +188,43 @@ class FarfetchScraper:
             details["farfetch_id"] = farfetch_id_el.parent.text.strip().replace("FARFETCH ID:", "").strip()
 
         return details
+    
+    def insert_or_update_product(self, base_data: dict, category: str):
+        existing = self.product_table.scan(
+            FilterExpression=Attr("url").eq(base_data["url"])
+        )
+
+        product = ProductModel(base_data, category)
+
+        if existing["Items"]:
+            self.logger.info(f"🔄 Updating existing product in DB: {base_data['url']}")
+        else:
+            self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
+
+        self.product_table.put_item(Item=product.to_dict())
+
+        details = base_data.get("item_details", {})
+        specs = {
+            "Brand": details.get("brand"),
+            "Condition": base_data.get("condition", "New"),
+            "Year": "Unknown",
+            "Size": None,
+            "Color": ", ".join(details.get("highlights", [])) if details.get("highlights") else None,
+            "Box/Papers": details.get("composition"),
+            "Dust Bag": details.get("farfetch_id")
+        }
+
+        if category == "Shoes":
+            meta = ShoesModel(product.product_id, specs)
+            self.shoes_table.put_item(Item=meta.to_dict())
+        elif category == "Bags":
+            meta = BagsModel(product.product_id, specs)
+            self.bags_table.put_item(Item=meta.to_dict())
+        elif category == "Accessories":
+            meta = AccessoriesModel(product.product_id, specs)
+            self.accessories_table.put_item(Item=meta.to_dict())
+        elif category == "Clothing":
+            meta = ClothingModel(product.product_id, specs)
+            self.clothing_table.put_item(Item=meta.to_dict())
+        else:
+            self.logger.warning(f"❌ Unknown category: {category}, skipping metadata.")

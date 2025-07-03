@@ -3,6 +3,13 @@ from scrapfly import ScrapflyClient, ScrapeConfig
 from bs4 import BeautifulSoup
 from utils.utility import Utility
 from utils.logger import get_logger
+from boto3.session import Session
+from boto3.dynamodb.conditions import Attr
+from models.product_item import ProductModel
+from models.bags import BagsModel
+from models.shoes import ShoesModel
+from models.accessories import AccessoriesModel
+from models.clothing import ClothingModel
 
 
 class VestiaireScraper:
@@ -10,7 +17,15 @@ class VestiaireScraper:
         self.client = ScrapflyClient(key=scrapfly_key)
         self.logger = get_logger()
 
-    async def search(self, query="chanel handbags", max_pages=2):
+        session = Session(profile_name="auricore-dev-kunal")
+        dynamodb = session.resource("dynamodb", region_name="us-east-2")
+        self.product_table = dynamodb.Table("ProductsTable")
+        self.bags_table = dynamodb.Table("BagsTable")
+        self.shoes_table = dynamodb.Table("ShoesTable")
+        self.accessories_table = dynamodb.Table("AccessoriesTable")
+        self.clothing_table = dynamodb.Table("ClothingTable")
+
+    async def search(self, query, category, product_id):
         url = f"https://us.vestiairecollective.com/search/?q={query.replace(' ', '%20')}"
         session_id = Utility.generate_random_session()
         results = []
@@ -40,7 +55,7 @@ class VestiaireScraper:
             headers = search_call["headers"]
             payload = json.loads(search_call["body"])
             results_raw = initial_data.get("items", [])
-            total_pages = min(initial_data.get("paginationStats", {}).get("totalPages", 1), max_pages)
+            total_pages = min(initial_data.get("paginationStats", {}).get("totalPages", 1), 5)
 
             self.logger.info(f"✅ Page 1 scraped with {len(results_raw)} items")
 
@@ -89,6 +104,8 @@ class VestiaireScraper:
                         "location": item.get("seller", {}).get("location", {}).get("country", "Unknown"),
                         "top_rated": False,
                         "source": "vestiaire",
+                        "product_id": product_id,
+                        "category": category,
                         "item_details": details
                     })
 
@@ -96,6 +113,9 @@ class VestiaireScraper:
                     self.logger.warning(f"⚠️ Skipping item due to parse error: {e}")
 
             self.logger.info(f"🎯 Total detailed results from Vestiaire: {len(results)}")
+            for item in results:
+                self.insert_or_update_product(item, category)
+            self.logger.info(f"✅ Vestiaire scraping completed: {len(results)} items found")
             return results
 
         except Exception as e:
@@ -157,3 +177,43 @@ class VestiaireScraper:
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to fetch product details from {url}: {e}")
             return {}
+
+    def insert_or_update_product(self, base_data: dict, category: str):
+        existing = self.product_table.scan(
+            FilterExpression=Attr("url").eq(base_data["url"])
+        )
+
+        product = ProductModel(base_data, category)
+
+        if existing["Items"]:
+            self.logger.info(f"🔄 Updating existing product in DB: {base_data['url']}")
+        else:
+            self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
+
+        self.product_table.put_item(Item=product.to_dict())
+
+        details = base_data.get("item_details", {})
+        specs = {
+            "Brand": details.get("brand") or details.get("designer"),
+            "Condition": base_data.get("condition", "Unknown"),
+            "Size": details.get("size"),
+            "Color": details.get("color"),
+            "Box/Papers": details.get("material"),
+            "Dust Bag": details.get("dust bag") or details.get("description"),
+            "Year": details.get("year", "Unknown"),
+        }
+
+        if category == "Shoes":
+            meta = ShoesModel(product.product_id, specs)
+            self.shoes_table.put_item(Item=meta.to_dict())
+        elif category == "Bags":
+            meta = BagsModel(product.product_id, specs)
+            self.bags_table.put_item(Item=meta.to_dict())
+        elif category == "Accessories":
+            meta = AccessoriesModel(product.product_id, specs)
+            self.accessories_table.put_item(Item=meta.to_dict())
+        elif category == "Clothing":
+            meta = ClothingModel(product.product_id, specs)
+            self.clothing_table.put_item(Item=meta.to_dict())
+        else:
+            self.logger.warning(f"❌ Unknown category: {category}, skipping metadata.")
