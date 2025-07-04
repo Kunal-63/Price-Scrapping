@@ -91,7 +91,6 @@ class RebagScraper:
                     "category": category
                 }
 
-                # 🚫 Sequential detail fetching instead of multithreading
                 detail = await self.get_product_details(full_url)
                 item["item_details"] = detail if isinstance(detail, dict) else {}
 
