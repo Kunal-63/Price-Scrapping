@@ -90,14 +90,20 @@ class RealRealScraper:
                 self.logger.warning(f"⚠️ Skipping item due to parse error: {e}")
                 detail_tasks.append(asyncio.sleep(0, result={}))
 
-        self.logger.info(f"🧵 Fetching {len(detail_tasks)} product details concurrently...")
-        detail_results = await asyncio.gather(*detail_tasks, return_exceptions=True)
+        self.logger.info(f"⏳ Fetching product details sequentially...")
 
-        for item, detail in zip(results, detail_results):
-            item["item_details"] = detail if isinstance(detail, dict) else {}
+        for item in results:
+            try:
+                detail = await self.get_product_details(item["url"])
+                item["item_details"] = detail if isinstance(detail, dict) else {}
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to fetch details for {item['url']}: {e}")
+                item["item_details"] = {}
+
             item["product_id"] = product_id
             item["category"] = category
             self.insert_or_update_product(item, category)
+            await asyncio.sleep(1)
 
         self.logger.info(f"✅ The RealReal Results: {len(results)} items found")
         return results
