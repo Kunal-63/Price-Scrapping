@@ -246,7 +246,8 @@ class EbayScraper:
     def insert_or_update_product(self, base_data: dict, category: str):
         # Check if the product with the same URL already exists
         existing = self.product_table.scan(
-            FilterExpression=Attr("url").eq(base_data["url"])
+            FilterExpression=Attr("url").eq(base_data["url"]),
+
         )
 
         product = ProductModel(base_data, category)
@@ -261,16 +262,16 @@ class EbayScraper:
         specs = base_data.get("item_specifics", {})
 
         if category == "Shoes":
-            meta = ShoesModel(product.product_id, specs)
+            meta = ShoesModel(product.product_id, specs, base_data["url"])
             self.shoes_table.put_item(Item=meta.to_dict())
         elif category == "Bags":
-            meta = BagsModel(product.product_id, specs)
+            meta = BagsModel(product.product_id, specs, base_data["url"])
             self.bags_table.put_item(Item=meta.to_dict())
         elif category == "Accessories":
-            meta = AccessoriesModel(product.product_id, specs)
+            meta = AccessoriesModel(product.product_id, specs, base_data["url"])
             self.accessories_table.put_item(Item=meta.to_dict())
         elif category == "Clothing":
-            meta = ClothingModel(product.product_id, specs)
+            meta = ClothingModel(product.product_id, specs, base_data["url"])
             self.clothing_table.put_item(Item=meta.to_dict())
         else:
             self.logger.warning(f"❌ Unknown category: {category}, skipping metadata.")

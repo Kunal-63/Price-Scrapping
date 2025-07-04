@@ -182,7 +182,7 @@ class Chrono24Scraper:
                 "Colorway": specs.get("Dial") or specs.get("Bezel material"),
                 "Size": clean_size(specs.get("Case diameter")),
                 "Box/Papers": specs.get("Scope of delivery")
-            })
+            },base_data["url"])
             self.shoes_table.put_item(Item=meta.to_dict())
 
         elif category == "Bags":
@@ -194,7 +194,7 @@ class Chrono24Scraper:
                 "Color": specs.get("Dial") or specs.get("Bracelet color") or specs.get("Bezel material"),
                 "Box/Papers": specs.get("Scope of delivery"),
                 "Dust Bag": None
-            })
+            }, base_data["url"])
             self.bags_table.put_item(Item=meta.to_dict())
 
         elif category == "Accessories":
@@ -202,7 +202,7 @@ class Chrono24Scraper:
                 "Brand": specs.get("Brand"),
                 "Condition": specs.get("Condition"),
                 "Year": specs.get("Year of production")
-            })
+            }, base_data["url"])
             self.accessories_table.put_item(Item=meta.to_dict())
 
         elif category == "Clothing":
@@ -210,7 +210,7 @@ class Chrono24Scraper:
                 "Brand": specs.get("Brand"),
                 "Condition": specs.get("Condition"),
                 "Size": clean_size(specs.get("Case diameter"))
-            })
+            }, base_data["url"])
             self.clothing_table.put_item(Item=meta.to_dict())
 
         else:
