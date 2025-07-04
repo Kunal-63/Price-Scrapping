@@ -26,10 +26,11 @@ category_tables = {
 }
 
 class ProductIdInput(BaseModel):
-    product_id: str
-    filters: Optional[Dict[str, str]] = None
+    product_id: Optional[str] = None
+    filters: Optional[Dict[str, str]] = None  # {"min_price": "100", "max_price": "500", "location": "NY"}
     limit: Optional[int] = 10
     last_evaluated_key: Optional[Dict] = None
+    group_by: Optional[str] = None  # e.g., "category", "brand" 
 
 
 class SearchInput(BaseModel):
@@ -74,25 +75,51 @@ async def search_and_store(input_data: SearchInput):
 @router.post("/product_by_id/")
 async def fetch_product_by_id(input_data: ProductIdInput):
     try:
-        response = product_table.scan(
-            FilterExpression=Attr("product_id").eq(input_data.product_id)
-        )
+        filter_expr = None
+
+        # Apply product_id filter if present
+        if input_data.product_id:
+            filter_expr = Attr("product_id").eq(input_data.product_id)
+
+        # Apply additional filters
+        filters = input_data.filters or {}
+        for key, value in filters.items():
+            if key == "min_price":
+                expr = Attr("listing_price").gte(float(value))
+            elif key == "max_price":
+                expr = Attr("listing_price").lte(float(value))
+            elif key == "from_date":
+                expr = Attr("created_at").gte(value)
+            elif key == "to_date":
+                expr = Attr("created_at").lte(value)
+            else:
+                expr = Attr(key).eq(value)
+
+            filter_expr = expr if not filter_expr else filter_expr & expr
+
+        scan_args = {
+            "Limit": input_data.limit,
+        }
+
+        if filter_expr:
+            scan_args["FilterExpression"] = filter_expr
+
+        if input_data.last_evaluated_key:
+            scan_args["ExclusiveStartKey"] = input_data.last_evaluated_key
+
+        response = product_table.scan(**scan_args)
         items = response.get("Items", [])
+        last_key = response.get("LastEvaluatedKey")
 
         if not items:
-            return {"message": "Product not found."}
+            return {"message": "No matching products found."}
 
         result = []
         for product in items:
-            if not product.get("category"):
-                return {"error": "Product does not have a category."}
-
-            # Check if the category exists in the category tables
             category = product.get("category")
-            if category not in category_tables:
-                return {"error": f"Invalid or unknown category: {category}"}
+            if not category or category not in category_tables:
+                continue
 
-            # Fetch metadata from the corresponding category table
             category_table = category_tables[category]
             meta_resp = category_table.get_item(Key={"url": product.get("url")})
             metadata = meta_resp.get("Item", {})
@@ -101,19 +128,25 @@ async def fetch_product_by_id(input_data: ProductIdInput):
                 "product": product,
                 "category_metadata": metadata
             })
-        category = product.get("category")
 
-        if not category or category not in category_tables:
-            return {"error": f"Invalid or unknown category: {category}"}
+        # Optional grouping
+        if input_data.group_by:
+            grouped = {}
+            for item in result:
+                key = item["product"].get(input_data.group_by, "Unknown")
+                grouped.setdefault(key, []).append(item)
+            return {
+                "grouped_results": grouped,
+                "last_evaluated_key": last_key
+            }
 
-        category_table = category_tables[category]
-        meta_resp = category_table.get_item(Key={"url": product.get("url")})
-        metadata = meta_resp.get("Item", {})
-
-        return result
+        return {
+            "results": result,
+            "last_evaluated_key": last_key
+        }
 
     except Exception as e:
-        logger.exception("Failed to fetch product by ID")
+        logger.exception("Failed to fetch product by ID with filters")
         return {"error": str(e)}
 
 def fetch_category_metadata(category: str, url: str):
