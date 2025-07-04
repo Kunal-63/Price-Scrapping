@@ -14,6 +14,8 @@ from models.bags import BagsModel
 from models.shoes import ShoesModel
 from models.accessories import AccessoriesModel
 from models.clothing import ClothingModel
+from config.scrapper_config import Config
+
 
 
 class RebagScraper:
@@ -21,7 +23,7 @@ class RebagScraper:
         self.client = ScrapflyClient(key=scrapfly_key)
         self.logger = get_logger()
 
-        session = Session(profile_name="auricore-dev-kunal")
+        session = Session(profile_name=Config.AWS_USERNAME)
         dynamodb = session.resource("dynamodb", region_name="us-east-2")
         self.product_table = dynamodb.Table("ProductsTable")
         self.bags_table = dynamodb.Table("BagsTable")

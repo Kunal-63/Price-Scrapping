@@ -15,6 +15,7 @@ from models.clothing import ClothingModel
 from boto3.session import Session
 from boto3.dynamodb.conditions import Attr
 import datetime
+from config.scrapper_config import Config
 
 
 class FashionphileScraper:
@@ -22,7 +23,7 @@ class FashionphileScraper:
         self.client = ScrapflyClient(key=scrapfly_key)
         self.logger = get_logger()
 
-        session = Session(profile_name="auricore-dev-kunal")
+        session = Session(profile_name=Config.AWS_USERNAME)
         dynamodb = session.resource("dynamodb", region_name="us-east-2")
         self.product_table = dynamodb.Table("ProductsTable")
         self.shoes_table = dynamodb.Table("ShoesTable")

@@ -4,13 +4,30 @@ from bs4 import BeautifulSoup
 import re
 from utils.logger import get_logger
 from utils.utility import Utility
+from config.scrapper_config import Config
+from boto3.session import Session
+from boto3.dynamodb.conditions import Attr
+from models.product_item import ProductModel
+from models.shoes import ShoesModel
+from models.bags import BagsModel
+from models.accessories import AccessoriesModel
+from models.clothing import ClothingModel
+import asyncio
 
 class StockXScraper:
     def __init__(self, scrapfly_key):
         self.client = ScrapflyClient(key=scrapfly_key)
         self.logger = get_logger()
 
-    async def search(self, query, max_items=5):
+        session = Session(profile_name=Config.AWS_USERNAME)
+        dynamodb = session.resource("dynamodb", region_name="us-east-2")
+        self.product_table = dynamodb.Table("ProductsTable")
+        self.shoes_table = dynamodb.Table("ShoesTable")
+        self.bags_table = dynamodb.Table("BagsTable")
+        self.accessories_table = dynamodb.Table("AccessoriesTable")
+        self.clothing_table = dynamodb.Table("ClothingTable")
+
+    async def search(self, query, category, product_id):
         self.logger.info(f"🔍 Searching StockX for query: {query}")
         url = f"https://stockx.com/search?s={quote(query)}"
 
@@ -30,7 +47,6 @@ class StockXScraper:
             soup = BeautifulSoup(html, "html.parser")
 
             results = []
-            count = 0
             for tile in soup.select('div[data-testid="ProductTile"]'):
                 title_elem = tile.select_one('[data-testid="product-tile-title"]')
                 price_elem = tile.select_one('[data-testid="product-tile-lowest-ask-amount"]')
@@ -53,6 +69,8 @@ class StockXScraper:
                 results.append({
                     "title": title,
                     "listing_price": price,
+                    "product_id": product_id,
+                    "category": category,
                     "url": link,
                     "image_url": image_url,
                     "condition": "New" if "new" in title.lower() else "Unknown",
@@ -65,9 +83,10 @@ class StockXScraper:
                     "source": "stockx"
                 })
 
-                count += 1
-                if count >= max_items:
-                    break
+            await asyncio.gather(*[
+                asyncio.to_thread(self.insert_or_update_product, item, category)
+                for item in results
+            ])
 
             self.logger.info(f"✅ StockX results fetched: {len(results)}")
             return results
@@ -167,3 +186,45 @@ class StockXScraper:
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to fetch product details for {url}: {e}")
             return {}
+
+    def insert_or_update_product(self, base_data: dict, category: str):
+        existing = self.product_table.scan(
+            FilterExpression=Attr("url").eq(base_data["url"])
+        )
+
+        product = ProductModel(base_data, category)
+
+        if existing["Items"]:
+            self.logger.info(f"🔄 Updating existing product in DB: {base_data['url']}")
+        else:
+            self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
+
+        self.product_table.put_item(Item=product.to_dict())
+
+        details = base_data.get("item_details", {})
+        specs = {
+            "Brand": base_data.get("seller"),
+            "Condition": base_data.get("condition", "Unknown"),
+            "Year": details.get("year", "Unknown"),
+            "Size": details.get("size") or details.get("product_dimensions"),
+            "Color": details.get("color"),
+            "Shape": details.get("shape"),
+            "Closure": details.get("closure"),
+            "Box/Papers": None,
+            "Dust Bag": details.get("description"),
+        }
+
+        if category == "Shoes":
+            meta = ShoesModel(product.product_id, specs)
+            self.shoes_table.put_item(Item=meta.to_dict())
+        elif category == "Bags":
+            meta = BagsModel(product.product_id, specs)
+            self.bags_table.put_item(Item=meta.to_dict())
+        elif category == "Accessories":
+            meta = AccessoriesModel(product.product_id, specs)
+            self.accessories_table.put_item(Item=meta.to_dict())
+        elif category == "Clothing":
+            meta = ClothingModel(product.product_id, specs)
+            self.clothing_table.put_item(Item=meta.to_dict())
+        else:
+            self.logger.warning(f"❌ Unknown category: {category}, skipping metadata.")

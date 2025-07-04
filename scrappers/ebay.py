@@ -23,7 +23,7 @@ class EbayScraper:
         self.logger = get_logger()
         self.MAX_CONCURRENT_DETAIL_FETCHES = 5
 
-        session = Session(profile_name="auricore-dev-kunal")
+        session = Session(profile_name=Config.AWS_USERNAME)
         dynamodb = session.resource("dynamodb", region_name="us-east-2")
         self.product_table = dynamodb.Table("ProductsTable")
         self.shoes_table = dynamodb.Table("ShoesTable")

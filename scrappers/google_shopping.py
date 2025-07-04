@@ -13,13 +13,14 @@ from models.accessories import AccessoriesModel
 from models.clothing import ClothingModel
 from boto3.session import Session
 from boto3.dynamodb.conditions import Attr
+from config.scrapper_config import Config
 
 class GoogleShoppingScraper:
     def __init__(self, client):
         self.client = client
         self.logger = get_logger()
 
-        session = Session(profile_name="auricore-dev-kunal")
+        session = Session(profile_name=Config.AWS_USERNAME)
         dynamodb = session.resource("dynamodb", region_name="us-east-2")
         self.product_table = dynamodb.Table("ProductsTable")
         self.shoes_table = dynamodb.Table("ShoesTable")
