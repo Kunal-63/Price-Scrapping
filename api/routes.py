@@ -1,4 +1,5 @@
 # app/api/search_and_store.py
+import boto3
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, HttpUrl
 from typing import Optional, List
@@ -7,12 +8,25 @@ from config.database import async_session
 from schemas.product_item import ProductItem
 from sqlalchemy.future import select
 import asyncio
-
+from boto3.dynamodb.conditions import Attr
 from utils.product_engine import ProductSearchEngine
 from utils.logger import get_logger
 
 router = APIRouter()
 logger = get_logger()
+
+dynamodb = boto3.resource("dynamodb")
+product_table = dynamodb.Table("ProductsTable")
+category_tables = {
+    "Shoes": dynamodb.Table("ShoesTable"),
+    "Bags": dynamodb.Table("BagsTable"),
+    "Accessories": dynamodb.Table("AccessoriesTable"),
+    "Clothing": dynamodb.Table("ClothingTable"),
+}
+
+class ProductIdInput(BaseModel):
+    product_id: str
+
 
 class SearchInput(BaseModel):
     query: Optional[str] = None
@@ -53,64 +67,32 @@ async def search_and_store(input_data: SearchInput):
     
     return all_items
 
-@router.post("/advanced_search/")
-async def search_advanced(input_data: SearchInput):
-    if input_data.category and input_data.category not in ALLOWED_CATEGORIES:
-        return {"error": f"Category '{input_data.category}' is not allowed."}
-
-    filter_expr = None
-
-    if input_data.query:
-        filter_expr = Attr("title").contains(input_data.query)
-
-    if input_data.min_price is not None:
-        expr = Attr("listing_price").gte(input_data.min_price)
-        filter_expr = filter_expr & expr if filter_expr else expr
-
-    if input_data.max_price is not None:
-        expr = Attr("listing_price").lte(input_data.max_price)
-        filter_expr = filter_expr & expr if filter_expr else expr
-
-    if input_data.location:
-        expr = Attr("location").eq(input_data.location)
-        filter_expr = filter_expr & expr if filter_expr else expr
-
-    if input_data.condition:
-        expr = Attr("condition").eq(input_data.condition)
-        filter_expr = filter_expr & expr if filter_expr else expr
-
-    if input_data.seller:
-        expr = Attr("seller").eq(input_data.seller)
-        filter_expr = filter_expr & expr if filter_expr else expr
-
-    if input_data.product_id:
-        expr = Attr("product_id").eq(input_data.product_id)
-        filter_expr = filter_expr & expr if filter_expr else expr
-
-    # Perform scan
-    scan_kwargs = {"FilterExpression": filter_expr} if filter_expr else {}
-    response = product_table.scan(**scan_kwargs)
-    results = response.get("Items", [])
-
-    # Category-specific filters
-    if input_data.category and (input_data.color or input_data.brand):
-        category_table = category_tables.get(input_data.category)
-        cat_filter_expr = None
-
-        if input_data.color:
-            expr = Attr("color").eq(input_data.color)
-            cat_filter_expr = expr
-
-        if input_data.brand:
-            expr = Attr("brand").eq(input_data.brand)
-            cat_filter_expr = cat_filter_expr & expr if cat_filter_expr else expr
-
-        category_response = category_table.scan(
-            FilterExpression=cat_filter_expr
+@router.post("/product_by_id/")
+async def fetch_product_by_id(input_data: ProductIdInput):
+    try:
+        response = product_table.scan(
+            FilterExpression=Attr("product_id").eq(input_data.product_id)
         )
-        valid_product_ids = {item["id"] for item in category_response.get("Items", [])}
+        items = response.get("Items", [])
 
-        # Filter main results using category product IDs
-        results = [r for r in results if r["product_id"] in valid_product_ids]
+        if not items:
+            return {"message": "Product not found."}
 
-    return results if results else {"message": "No results found"}
+        product = items[0]
+        category = product.get("category")
+
+        if not category or category not in category_tables:
+            return {"error": f"Invalid or unknown category: {category}"}
+
+        category_table = category_tables[category]
+        meta_resp = category_table.get_item(Key={"url": product.get("url")})
+        metadata = meta_resp.get("Item", {})
+
+        return {
+            "product": product,
+            "category_metadata": metadata
+        }
+
+    except Exception as e:
+        logger.exception("Failed to fetch product by ID")
+        return {"error": str(e)}
