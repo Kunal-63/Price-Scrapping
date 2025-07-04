@@ -78,7 +78,25 @@ async def fetch_product_by_id(input_data: ProductIdInput):
         if not items:
             return {"message": "Product not found."}
 
-        product = items[0]
+        result = []
+        for product in items:
+            if not product.get("category"):
+                return {"error": "Product does not have a category."}
+
+            # Check if the category exists in the category tables
+            category = product.get("category")
+            if category not in category_tables:
+                return {"error": f"Invalid or unknown category: {category}"}
+
+            # Fetch metadata from the corresponding category table
+            category_table = category_tables[category]
+            meta_resp = category_table.get_item(Key={"url": product.get("url")})
+            metadata = meta_resp.get("Item", {})
+
+            result.append({
+                "product": product,
+                "category_metadata": metadata
+            })
         category = product.get("category")
 
         if not category or category not in category_tables:
@@ -88,10 +106,7 @@ async def fetch_product_by_id(input_data: ProductIdInput):
         meta_resp = category_table.get_item(Key={"url": product.get("url")})
         metadata = meta_resp.get("Item", {})
 
-        return {
-            "product": product,
-            "category_metadata": metadata
-        }
+        return result
 
     except Exception as e:
         logger.exception("Failed to fetch product by ID")
