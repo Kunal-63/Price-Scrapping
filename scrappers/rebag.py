@@ -23,7 +23,7 @@ class RebagScraper:
         self.client = ScrapflyClient(key=scrapfly_key)
         self.logger = get_logger()
 
-        session = Session(profile_name=Config.AWS_USERNAME)
+        session = Session()
         dynamodb = session.resource("dynamodb", region_name="us-east-2")
         self.product_table = dynamodb.Table("ProductsTable")
         self.bags_table = dynamodb.Table("BagsTable")
