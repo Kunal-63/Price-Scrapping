@@ -15,7 +15,7 @@ from utils.logger import get_logger
 router = APIRouter()
 logger = get_logger()
 
-dynamodb = boto3.resource("dynamodb")
+dynamodb = boto3.resource("dynamodb", region_name="us-east-2")
 product_table = dynamodb.Table("ProductsTable")
 category_tables = {
     "Shoes": dynamodb.Table("ShoesTable"),
