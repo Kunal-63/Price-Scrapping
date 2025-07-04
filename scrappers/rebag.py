@@ -54,7 +54,6 @@ class RebagScraper:
         cards = soup.select("div.plp__product")
 
         results = []
-        detail_tasks = []
 
         for card in cards:
             try:
@@ -77,7 +76,7 @@ class RebagScraper:
 
                 full_url = href if href.startswith("http") else "https://shop.rebag.com" + href
 
-                results.append({
+                item = {
                     "title": title,
                     "listing_price": price,
                     "url": full_url,
@@ -87,28 +86,27 @@ class RebagScraper:
                     "shipping": "Free Shipping in US",
                     "location": "US",
                     "top_rated": True,
-                    "source": "rebag"
-                })
+                    "source": "rebag",
+                    "product_id": product_id,
+                    "category": category
+                }
 
-                detail_tasks.append(self.get_product_details(full_url))
+                # 🚫 Sequential detail fetching instead of multithreading
+                detail = await self.get_product_details(full_url)
+                item["item_details"] = detail if isinstance(detail, dict) else {}
+
+                # Insert into DB
+                self.insert_or_update_product(item, category)
+
+                results.append(item)
+
             except Exception as e:
                 self.logger.warning(f"⚠️ Skipping Rebag item due to error: {e}")
-                detail_tasks.append(asyncio.sleep(0, result={}))
-
-        self.logger.info(f"🧵 Fetching {len(detail_tasks)} product details concurrently...")
-        detail_results = await asyncio.gather(*detail_tasks, return_exceptions=True)
-
-        for item, detail in zip(results, detail_results):
-            item["item_details"] = detail if isinstance(detail, dict) else {}
-            item["product_id"] = product_id
-            item["category"] = category
-            self.insert_or_update_product(item, category)
 
         self.logger.info(f"✅ Rebag results fetched: {len(results)}")
         return results
-
+    
     async def get_product_details(self, product_url):
-        await asyncio.sleep(random.uniform(10, 15))
         self.logger.info(f"🔍 Fetching product details from Rebag: {product_url}")
         try:
             resp = await self.client.async_scrape(ScrapeConfig(
