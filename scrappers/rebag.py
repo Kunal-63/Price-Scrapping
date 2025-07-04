@@ -108,6 +108,7 @@ class RebagScraper:
         return results
 
     async def get_product_details(self, product_url):
+        await asyncio.sleep(random.uniform(10, 15))
         self.logger.info(f"🔍 Fetching product details from Rebag: {product_url}")
         try:
             resp = await self.client.async_scrape(ScrapeConfig(
