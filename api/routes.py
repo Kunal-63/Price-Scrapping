@@ -2,7 +2,7 @@
 import boto3
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, HttpUrl
-from typing import Optional, List
+from typing import Optional, List, Dict
 from sqlalchemy.ext.asyncio import AsyncSession
 from config.database import async_session
 from schemas.product_item import ProductItem
@@ -27,6 +27,9 @@ category_tables = {
 
 class ProductIdInput(BaseModel):
     product_id: str
+    filters: Optional[Dict[str, str]] = None
+    limit: Optional[int] = 10
+    last_evaluated_key: Optional[Dict] = None
 
 
 class SearchInput(BaseModel):
