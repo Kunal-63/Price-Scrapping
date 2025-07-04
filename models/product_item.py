@@ -14,7 +14,7 @@ class ProductModel:
         self.shipping = base_data.get("shipping", "Varies")
         self.location = base_data.get("location", "Unknown")
         self.top_rated = base_data.get("top_rated", False)
-        self.source = base_data.get("source", "ebay")
+        self.source = base_data.get("source")
         self.original_price = base_data.get("original_price")
         self.discount = base_data.get("discount")
         self.category = category

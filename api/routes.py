@@ -27,8 +27,6 @@ async def search_and_store(input_data: SearchInput):
         return {"error": "Provide either 'query' or 'image_url'."}
 
     engine = ProductSearchEngine()
-
-    # Do the product search
     try:
         combined = await engine.search(query=input_data.query, image_url=input_data.image_url, category=input_data.category, product_id=input_data.product_id)
     except Exception as e:
@@ -37,8 +35,7 @@ async def search_and_store(input_data: SearchInput):
 
     if not combined:
         return {"message": "No results found"}
-
-    # Flatten all results
+    
     all_items = []
     for source, items in combined.items():
         print(source, items)
@@ -55,25 +52,3 @@ async def search_and_store(input_data: SearchInput):
                 all_items.append(item)
     
     return all_items
-
-    # Insert into DB
-    async with async_session() as db:
-        inserted = 0
-        for item in all_items:
-            if not item.get("url") or not item.get("title"):
-                continue
-
-            result = await db.execute(select(Product).where(Product.url == item["url"]))
-            if result.scalar():
-                continue  # Skip duplicates
-
-            db_item = Product(**{k: item.get(k) for k in Product.__table__.columns.keys() if k in item})
-            db.add(db_item)
-            inserted += 1
-
-        await db.commit()
-
-    return {
-        "message": f"{inserted} new products inserted.",
-        "total_scraped": len(all_items)
-    }
