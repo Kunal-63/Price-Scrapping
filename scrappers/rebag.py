@@ -2,7 +2,7 @@
 import random
 import re
 from urllib.parse import quote
-from scrapfly import ScrapflyClient, ScrapeConfig
+from scrapfly import ScrapflyClient, ScrapeConfig, ScrapflyScrapeError
 from bs4 import BeautifulSoup
 from utils.utility import Utility
 from utils.logger import get_logger
@@ -17,14 +17,15 @@ from models.clothing import ClothingModel
 from config.scrapper_config import Config
 from models.beauty import BeautyModel
 from models.jewelry import JewelryModel
+import backoff
 
 class RebagScraper:
     def __init__(self, scrapfly_key):
         self.client = ScrapflyClient(key=scrapfly_key)
         self.logger = get_logger()
 
-        session = Session()
-        dynamodb = session.resource("dynamodb", region_name="us-east-2")
+        session = Session(profile_name="auricore-dev-kunal")
+        dynamodb = session.resource("dynamodb", region_name="us-east-1")
         self.product_table = dynamodb.Table("ProductsTable")
         self.bags_table = dynamodb.Table("BagsTable")
         self.shoes_table = dynamodb.Table("ShoesTable")
@@ -33,12 +34,25 @@ class RebagScraper:
         self.beauty_table = dynamodb.Table("BeautyTable")
         self.jewelry_table = dynamodb.Table("JewelryTable")
 
-    async def search(self, query, category, product_id):
+        self.semaphore = asyncio.Semaphore(10)
+
+    @backoff.on_exception(
+    backoff.expo,
+    ScrapflyScrapeError,
+    max_tries=4,
+    giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)  # retry only if it's timeout
+)
+    async def scrape_with_retries(self, config):
+        self.logger.debug(f"⏳ Scraping URL: {config.url}")
+        async with self.semaphore:
+            return await self.client.async_scrape(config)
+
+    async def search(self, query, category, product_id, image_query):
         self.logger.info(f"🔍 Searching Rebag for query: {query}")
         url = f"https://shop.rebag.com/collections/all?q={quote(query)}"
 
         try:
-            resp = await self.client.async_scrape(ScrapeConfig(
+            resp = await self.scrape_with_retries(ScrapeConfig(
                 url=url,
                 render_js=True,
                 asp=True,
@@ -90,7 +104,8 @@ class RebagScraper:
                     "top_rated": True,
                     "source": "rebag",
                     "product_id": product_id,
-                    "category": category
+                    "category": category,
+                    "image_query": image_query
                 }
 
                 detail = await self.get_product_details(full_url)
@@ -110,7 +125,7 @@ class RebagScraper:
     async def get_product_details(self, product_url):
         self.logger.info(f"🔍 Fetching product details from Rebag: {product_url}")
         try:
-            resp = await self.client.async_scrape(ScrapeConfig(
+            resp = await self.scrape_with_retries(ScrapeConfig(
                 url=product_url,
                 render_js=True,
                 asp=True,

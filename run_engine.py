@@ -1,10 +1,12 @@
 import asyncio
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
-
+from boto3.session import Session
 from utils.product_engine import ProductSearchEngine
 
-dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
+
+session = Session()
+dynamodb = session.resource("dynamodb", region_name="us-east-1")
 table_name = "LuxuryProductsTable"
 table = dynamodb.Table(table_name)
 
@@ -40,13 +42,18 @@ async def process_all_items():
             modified_category = category_mapping.get(category.lower(), "Unknown")
             product_id = item.get("product_id")
 
+            imageurls = item.get('s3_image_urls', [])
+            image = None
+            if imageurls:
+                image = imageurls[0]
+
             result = await search_engine.search(
                 query=query,
+                image_url=image,
                 category=modified_category,
                 product_id=product_id
             )
 
-            # Do something with `result`, e.g. log, save to DB, write to file, etc.
             print(f"✅ Search complete for: {query}")
 
         batch_number += 1

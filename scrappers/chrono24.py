@@ -22,8 +22,8 @@ class Chrono24Scraper:
         self.client = ScrapflyClient(key=scrapfly_key)
         self.logger = get_logger()
 
-        session = Session()
-        dynamodb = session.resource("dynamodb", region_name="us-east-2")
+        session = Session(profile_name="auricore-dev-kunal")
+        dynamodb = session.resource("dynamodb", region_name="us-east-1")
         self.product_table = dynamodb.Table("ProductsTable")
         self.shoes_table = dynamodb.Table("ShoesTable")
         self.bags_table = dynamodb.Table("BagsTable")
@@ -32,7 +32,20 @@ class Chrono24Scraper:
         self.beauty_table = dynamodb.Table("BeautyTable")
         self.jewelry_table = dynamodb.Table("JewelryTable")
 
-    async def search(self, query, category, product_id):
+        self.semaphore = asyncio.Semaphore(10) 
+
+    @backoff.on_exception(
+    backoff.expo,
+    ScrapflyScrapeError,
+    max_tries=4,
+    giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)  # retry only if it's timeout
+)
+    async def scrape_with_retries(self, config):
+        self.logger.debug(f"⏳ Scraping URL: {config.url}")
+        async with self.semaphore:
+            return await self.client.async_scrape(config)
+
+    async def search(self, query, category, product_id, image_query):
         url = f"https://www.chrono24.com/search/index.htm?dosearch=true&query={quote(query)}"
         self.logger.info(f"📡 Fetching Chrono24 results for query: {query}")
 
@@ -86,7 +99,8 @@ class Chrono24Scraper:
                                     "location": "Unknown",
                                     "top_rated": False,
                                     "source": "chrono24",
-                                    "category": category
+                                    "category": category,
+                                    "image_query": image_query,
                                 }
 
                                 results.append(base_data)
@@ -105,12 +119,7 @@ class Chrono24Scraper:
 
         self.logger.info(f"✅ Chrono24 items inserted: {len(results)}")
         return results
-
-    @backoff.on_exception(backoff.expo, ScrapflyScrapeError, max_tries=5)
-    async def scrape_with_retries(self, config):
-        self.logger.debug(f"⏳ Scraping URL: {config.url}")
-        return await self.client.async_scrape(config)
-
+    
     async def get_product_detail(self, url):
         self.logger.info(f"🔍 Fetching product detail from: {url}")
         try:

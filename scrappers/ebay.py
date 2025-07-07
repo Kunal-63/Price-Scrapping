@@ -21,10 +21,10 @@ class EbayScraper:
     def __init__(self, scrapfly_key):
         self.client = ScrapflyClient(key=scrapfly_key)
         self.logger = get_logger()
-        self.MAX_CONCURRENT_DETAIL_FETCHES = 5
+        self.MAX_CONCURRENT_DETAIL_FETCHES = 10
 
-        session = Session()
-        dynamodb = session.resource("dynamodb", region_name="us-east-2")
+        session = Session(profile_name="auricore-dev-kunal")
+        dynamodb = session.resource("dynamodb", region_name="us-east-1")
         self.product_table = dynamodb.Table("ProductsTable")
         self.shoes_table = dynamodb.Table("ShoesTable")
         self.bags_table = dynamodb.Table("BagsTable")
@@ -33,25 +33,30 @@ class EbayScraper:
         self.beauty_table = dynamodb.Table("BeautyTable")
         self.jewelry_table = dynamodb.Table("JewelryTable")
 
-    async def search(self, query, category, product_id):
+    async def search(self, query, category, product_id, image_query):
         if(not category):
             raise ValueError("Category must be specified for eBay search.")
             
         self.logger.info(f"🔍 Starting eBay search for: {query}")
         try:
-            active = await self.get_active_listings(query, category, product_id)
-            sold = await self.get_sold_items(query, category, product_id)
+            active = await self.get_active_listings(query, category, product_id, image_query)
+            sold = await self.get_sold_items(query, category, product_id, image_query)
             return {'active': active, 'sold': sold}
         except Exception as e:
             self.logger.exception(f"❌ Error during eBay search: {e}")
             return {'active': [], 'sold': []}
 
-    @backoff.on_exception(backoff.expo, ScrapflyScrapeError, max_tries=5)
+    @backoff.on_exception(
+    backoff.expo,
+    ScrapflyScrapeError,
+    max_tries=4,
+    giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)  # retry only if it's timeout
+)
     async def scrape_with_retries(self, config):
         self.logger.debug(f"⏳ Scraping URL: {config.url}")
         return await self.client.async_scrape(config)
 
-    async def get_active_listings(self, query, category, product_id):
+    async def get_active_listings(self, query, category, product_id, image_query):
         listings = []
         sem = asyncio.Semaphore(self.MAX_CONCURRENT_DETAIL_FETCHES)
 
@@ -112,7 +117,8 @@ class EbayScraper:
                     "image_url": image["src"] if image and image.has_attr("src") else None,
                     "time_left": time_left.text.strip() if time_left else "Unknown",
                     "top_rated": bool(top_rated),
-                    "source": 'ebay'
+                    "source": 'ebay',
+                    "image_query": image_query,
                 }
 
                 try:
@@ -129,7 +135,7 @@ class EbayScraper:
         self.logger.info(f"✅ Active listings fetched and inserted: {len(listings)}")
         return listings
 
-    async def get_sold_items(self, query, category, product_id):
+    async def get_sold_items(self, query, category, product_id, image_query):
         url = f"https://www.ebay.com/sch/i.html?_nkw={quote(query)}&_sop=13&LH_Complete=1&LH_Sold=1"
         self.logger.debug(f"📱 Fetching sold items from eBay: {url}")
 
@@ -187,7 +193,8 @@ class EbayScraper:
                 "top_rated": bool(top_rated),
                 "source": 'ebay',
                 "description": details.get("description"),
-                "item_specifics": details.get("item_specifics", {})
+                "item_specifics": details.get("item_specifics", {}),
+                "image_query": image_query,
             }
 
             self.insert_or_update_product(base_data, category)
@@ -203,7 +210,7 @@ class EbayScraper:
                 url=url,
                 render_js=True,
                 asp=True,
-                wait_for_selector="#itemTitle",
+                wait_for_selector=".ux-layout-section-evo",
                 session=Utility.generate_random_session(),
                 retry=False,
                 timeout=120000,

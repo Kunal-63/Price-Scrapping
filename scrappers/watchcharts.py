@@ -1,7 +1,7 @@
 import re
 import json
 from urllib.parse import quote
-from scrapfly import ScrapflyClient, ScrapeConfig
+from scrapfly import ScrapflyClient, ScrapeConfig, ScrapflyScrapeError
 from bs4 import BeautifulSoup
 from utils.utility import Utility
 from utils.logger import get_logger
@@ -9,7 +9,7 @@ from boto3.session import Session
 from boto3.dynamodb.conditions import Attr
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
-
+import backoff
 from models.product_item import ProductModel
 from models.bags import BagsModel
 from models.shoes import ShoesModel
@@ -25,8 +25,8 @@ class WatchChartsScraper:
         self.client = ScrapflyClient(key=scrapfly_key)
         self.logger = get_logger()
 
-        session = Session()
-        dynamodb = session.resource("dynamodb", region_name="us-east-2")
+        session = Session(profile_name="auricore-dev-kunal")
+        dynamodb = session.resource("dynamodb", region_name="us-east-1")
         self.product_table = dynamodb.Table("ProductsTable")
         self.bags_table = dynamodb.Table("BagsTable")
         self.shoes_table = dynamodb.Table("ShoesTable")
@@ -35,16 +35,29 @@ class WatchChartsScraper:
         self.beauty_table = dynamodb.Table("BeautyTable")
         self.jewelry_table = dynamodb.Table("JewelryTable")
 
-        self.executor = ThreadPoolExecutor(max_workers=10)
+        self.executor = ThreadPoolExecutor(max_workers=5)
+        self.semaphore = asyncio.Semaphore(5) 
 
-    async def search(self, query, category, product_id):
+
+    @backoff.on_exception(
+    backoff.expo,
+    ScrapflyScrapeError,
+    max_tries=4,
+    giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)  # retry only if it's timeout
+)
+    async def scrape_with_retries(self, config):
+        self.logger.debug(f"⏳ Scraping URL: {config.url}")
+        async with self.semaphore:
+            return await self.client.async_scrape(config)
+
+    async def search(self, query, category, product_id, image_query):
         self.logger.info(f"🔍 Searching WatchCharts for: {query}")
         url = f"https://watchcharts.com/listings?q={quote(query)}"
         results = []
         detail_tasks = []
 
         try:
-            resp = await self.client.async_scrape(ScrapeConfig(
+            resp = await self.scrape_with_retries(ScrapeConfig(
                 url=url,
                 asp=True,
                 render_js=False,
@@ -93,7 +106,8 @@ class WatchChartsScraper:
                         "shipping": "Varies",
                         "location": "Unknown",
                         "top_rated": False,
-                        "source": "watchcharts"
+                        "source": "watchcharts",
+                        "image_query": image_query,
                     }
 
                     detail_tasks.append(self.fetch_and_insert(product, category))
@@ -118,7 +132,7 @@ class WatchChartsScraper:
     async def fetch_item_details(self, url):
         self.logger.info(f"🔍 Fetching item details from: {url}")
         try:
-            resp = await self.client.async_scrape(ScrapeConfig(
+            resp = await self.scrape_with_retries(ScrapeConfig(
                 url=url,
                 asp=True,
                 render_js=True,

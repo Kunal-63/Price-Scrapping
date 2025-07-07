@@ -3,7 +3,7 @@ import uuid
 import json
 import asyncio
 from urllib.parse import quote
-from scrapfly import ScrapflyClient, ScrapeConfig
+from scrapfly import ScrapflyClient, ScrapeConfig, ScrapflyScrapeError
 from bs4 import BeautifulSoup
 from utils.utility import Utility
 from utils.logger import get_logger
@@ -18,14 +18,16 @@ import datetime
 from config.scrapper_config import Config
 from models.beauty import BeautyModel
 from models.jewelry import JewelryModel
+import backoff
+
 
 class FarfetchScraper:
-    def __init__(self, client):
-        self.client = client
+    def __init__(self, scrapfly_key):
+        self.client = ScrapflyClient(key=scrapfly_key)
         self.logger = get_logger()
 
-        session = Session()
-        dynamodb = session.resource("dynamodb", region_name="us-east-2")
+        session = Session(profile_name="auricore-dev-kunal")
+        dynamodb = session.resource("dynamodb", region_name="us-east-1")
         self.product_table = dynamodb.Table("ProductsTable")
         self.shoes_table = dynamodb.Table("ShoesTable")
         self.bags_table = dynamodb.Table("BagsTable")
@@ -34,12 +36,25 @@ class FarfetchScraper:
         self.beauty_table = dynamodb.Table("BeautyTable")
         self.jewelry_table = dynamodb.Table("JewelryTable")
 
-    async def search(self, query, category, product_id):
+        self.semaphore = asyncio.Semaphore(10) 
+
+    @backoff.on_exception(
+    backoff.expo,
+    ScrapflyScrapeError,
+    max_tries=4,
+    giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)  # retry only if it's timeout
+)
+    async def scrape_with_retries(self, config):
+        self.logger.debug(f"⏳ Scraping URL: {config.url}")
+        async with self.semaphore:
+            return await self.client.async_scrape(config)
+
+    async def search(self, query, category, product_id, image_query):
         self.logger.info(f"🔍 Searching Farfetch for query: {query}")
         url = f"https://www.farfetch.com/shopping/men/items.aspx?query={quote(query)}"
 
         try:
-            resp = await self.client.async_scrape(ScrapeConfig(
+            resp = await self.scrape_with_retries(ScrapeConfig(
                 url=url,
                 asp=True,
                 render_js=True,
@@ -84,7 +99,8 @@ class FarfetchScraper:
                         "shipping": "Varies by region",
                         "location": "Global",
                         "top_rated": True,
-                        "source": "farfetch"
+                        "source": "farfetch", 
+                        "image_query": image_query,
                     }
                     detail_tasks.append(self.get_product_details(product_url))
                     results.append(base_data)
@@ -111,7 +127,7 @@ class FarfetchScraper:
         self.logger.info(f"🔍 Fetching Farfetch product details: {product_url}")
 
         try:
-            resp = await self.client.async_scrape(ScrapeConfig(
+            resp = await self.scrape_with_retries(ScrapeConfig(
                 url=product_url,
                 asp=True,
                 render_js=True,

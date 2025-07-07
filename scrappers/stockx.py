@@ -1,5 +1,5 @@
 from urllib.parse import quote
-from scrapfly import ScrapflyClient, ScrapeConfig
+from scrapfly import ScrapflyClient, ScrapeConfig, ScrapflyScrapeError
 from bs4 import BeautifulSoup
 import re
 from utils.logger import get_logger
@@ -15,14 +15,15 @@ from models.clothing import ClothingModel
 import asyncio
 from models.beauty import BeautyModel
 from models.jewelry import JewelryModel
+import backoff
 
 class StockXScraper:
     def __init__(self, scrapfly_key):
         self.client = ScrapflyClient(key=scrapfly_key)
         self.logger = get_logger()
 
-        session = Session()
-        dynamodb = session.resource("dynamodb", region_name="us-east-2")
+        session = Session(profile_name="auricore-dev-kunal")
+        dynamodb = session.resource("dynamodb", region_name="us-east-1")
         self.product_table = dynamodb.Table("ProductsTable")
         self.shoes_table = dynamodb.Table("ShoesTable")
         self.bags_table = dynamodb.Table("BagsTable")
@@ -31,12 +32,25 @@ class StockXScraper:
         self.beauty_table = dynamodb.Table("BeautyTable")
         self.jewelry_table = dynamodb.Table("JewelryTable")
 
-    async def search(self, query, category, product_id):
+        self.semaphore = asyncio.Semaphore(5)
+
+    @backoff.on_exception(
+    backoff.expo,
+    ScrapflyScrapeError,
+    max_tries=4,
+    giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)  # retry only if it's timeout
+)
+    async def scrape_with_retries(self, config):
+        self.logger.debug(f"⏳ Scraping URL: {config.url}")
+        async with self.semaphore:
+            return await self.client.async_scrape(config)
+
+    async def search(self, query, category, product_id, image_query):
         self.logger.info(f"🔍 Searching StockX for query: {query}")
         url = f"https://stockx.com/search?s={quote(query)}"
 
         try:
-            resp = await self.client.async_scrape(ScrapeConfig(
+            resp = await self.scrape_with_retries(ScrapeConfig(
                 url=url,
                 asp=True,
                 render_js=True,
@@ -84,7 +98,8 @@ class StockXScraper:
                     "top_rated": True,
                     "sales_history": recent_sales,
                     "item_details": item_details,
-                    "source": "stockx"
+                    "source": "stockx",
+                    "image_query": image_query,
                 })
 
             await asyncio.gather(*[
@@ -101,7 +116,7 @@ class StockXScraper:
 
     async def fetch_sales_history(self, url):
         try:
-            resp = await self.client.async_scrape(ScrapeConfig(
+            resp = await self.scrape_with_retries(ScrapeConfig(
                 url=url,
                 asp=False,
                 render_js=True,

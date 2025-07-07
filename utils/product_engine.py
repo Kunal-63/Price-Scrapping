@@ -45,11 +45,13 @@ class ProductSearchEngine:
         self.rebag = RebagScraper(Config.SCRAPFLY_KEY)
         self.vestiaire = VestiaireScraper(Config.SCRAPFLY_KEY)
         self.grailed = GrailedScraper(Config.SCRAPFLY_KEY)
-        self.farfetch = FarfetchScraper(client)
+        self.farfetch = FarfetchScraper(Config.SCRAPFLY_KEY)
         self.google_shopping = GoogleShoppingScraper(client)
 
     async def search(self, query: str = None, image_url: str = None, category: str = None, product_id: str = None):
         final_query = None
+        image_query = None
+        combined_query = None
 
         if image_url:
             if not image_url.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
@@ -64,6 +66,7 @@ class ProductSearchEngine:
 
             logger.info("Refining query using Gemini (from image)...")
             final_query = self.query_refiner.refine_query(base_name, image_url)
+            image_query = final_query
 
         elif query:
             logger.info("Refining query using Gemini (from text query)...")
@@ -72,12 +75,15 @@ class ProductSearchEngine:
         if not final_query:
             logger.error("No valid query generated.")
             return
+        
+        if final_query and image_query:
+            final_query = self.query_refiner.refine_query_with_image(product_query=final_query, image_keywords=image_query)
 
         logger.info(f"Final Search Query: {final_query}")
 
         async def fetch(scraper, name):
             try:
-                result = await scraper.search(final_query, category, product_id)
+                result = await scraper.search(final_query, category, product_id, image_query)
                 if isinstance(result, dict) and "active" in result:
                     logger.info(f"{name} Results: {len(result['active'])} active, {len(result['sold'])} sold")
                 else:

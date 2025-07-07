@@ -15,22 +15,32 @@ from models.accessories import AccessoriesModel
 from models.clothing import ClothingModel
 from models.beauty import BeautyModel
 from models.jewelry import JewelryModel
+import backoff
 
 
 class SerpAPISearcher:
     def __init__(self):
         self.logger = get_logger()
 
-        session = Session()
-        dynamodb = session.resource("dynamodb", region_name="us-east-2")
+        session = Session(profile_name="auricore-dev-kunal")
+        dynamodb = session.resource("dynamodb", region_name="us-east-1")
         self.product_table = dynamodb.Table("ProductsTable")
         self.shoes_table = dynamodb.Table("ShoesTable")
         self.bags_table = dynamodb.Table("BagsTable")
         self.accessories_table = dynamodb.Table("AccessoriesTable")
         self.clothing_table = dynamodb.Table("ClothingTable")
 
+        self.semaphore = asyncio.Semaphore(10) 
 
-    async def search(self, query, category, product_id):
+    @backoff.on_exception(backoff.expo, httpx.HTTPError, max_tries=5)
+    async def fetch_with_retries(self, url, params=None, headers=None):
+        async with self.semaphore:
+            async with httpx.AsyncClient(timeout=10) as client:
+                res = await client.get(url, params=params, headers=headers)
+                res.raise_for_status()
+                return res
+
+    async def search(self, query, category, product_id, image_query):
         self.logger.info(f"🔍 Searching SerpAPI for query: {query}")
 
         params = {
@@ -41,10 +51,8 @@ class SerpAPISearcher:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                res = await client.get("https://serpapi.com/search.json", params=params)
-                res.raise_for_status()
-                products = res.json().get("shopping_results", [])
+            res = await self.fetch_with_retries("https://serpapi.com/search.json", params=params)
+            products = res.json().get("shopping_results", [])
 
             results = []
             detail_tasks = []
@@ -72,7 +80,8 @@ class SerpAPISearcher:
                     "location": location,
                     "image_url": image_url,
                     "top_rated": False,
-                    "source": "google_shopping"
+                    "source": "google_shopping",
+                    "image_query": image_query
                 })
                 detail_tasks.append(self.get_product_details(link))
 
@@ -100,10 +109,8 @@ class SerpAPISearcher:
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                               "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
             }
-            async with httpx.AsyncClient(timeout=10) as client:
-                res = await client.get(url, headers=headers)
-                res.raise_for_status()
-                soup = BeautifulSoup(res.text, "html.parser")
+            res = await self.fetch_with_retries(url, headers=headers)
+            soup = BeautifulSoup(res.text, "html.parser")
 
             description = []
             details = {}

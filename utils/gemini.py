@@ -95,3 +95,31 @@ class GeminiRefiner:
             print(f"❌ Gemini scoring error: {e}")
 
         return 0
+    
+    def refine_query_with_image(self, product_query: str, image_keywords: str) -> str:
+        """Generates the best product search query by combining text and image info using Gemini API."""
+        prompt = (
+            "You are a product search query expert. "
+            "Given a product name and an image filename, merge them intelligently to create the most accurate and searchable product query "
+            "for sites like eBay, Grailed, or StockX.\n\n"
+            f"Product query: {product_query}\n"
+            f"Image filename keywords: {image_keywords}\n\n"
+            "🎯 Only return the **final search query** string. No extra text, no explanations, no formatting.\n"
+            "Now generate the merged search query:"
+        )
+
+        try:
+            response = requests.post(
+                self.api_url,
+                headers={"Content-Type": "application/json"},
+                params={"key": self.api_key},
+                json={"contents": [{"parts": [{"text": prompt}]}]},
+                timeout=10
+            )
+            response.raise_for_status()
+            data = response.json()
+            parts = data.get("candidates", [])[0].get("content", {}).get("parts", [])
+            return parts[0].get("text", product_query).strip() if parts else product_query
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Error using Gemini API: {e}")
+            return product_query

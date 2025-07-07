@@ -21,7 +21,7 @@ router = APIRouter()
 logger = get_logger()
 
 session = Session()
-dynamodb = session.resource("dynamodb", region_name="us-east-2")
+dynamodb = session.resource("dynamodb", region_name="us-east-1")
 product_table = dynamodb.Table("ProductsTable")
 category_tables = {
     "Shoes": dynamodb.Table("ShoesTable"),
