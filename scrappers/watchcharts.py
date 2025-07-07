@@ -50,7 +50,7 @@ class WatchChartsScraper:
         async with self.semaphore:
             return await self.client.async_scrape(config)
 
-    async def search(self, query, category, product_id, image_query):
+    async def search(self, query, category, product_id, image_query, search_query):
         self.logger.info(f"🔍 Searching WatchCharts for: {query}")
         url = f"https://watchcharts.com/listings?q={quote(query)}"
         results = []
@@ -108,6 +108,7 @@ class WatchChartsScraper:
                         "top_rated": False,
                         "source": "watchcharts",
                         "image_query": image_query,
+                        "search_query": search_query,
                     }
 
                     detail_tasks.append(self.fetch_and_insert(product, category))

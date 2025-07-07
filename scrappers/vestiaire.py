@@ -45,7 +45,7 @@ class VestiaireScraper:
         async with self.semaphore:
             return await self.client.async_scrape(config)
 
-    async def search(self, query, category, product_id, image_query):
+    async def search(self, query, category, product_id, image_query, search_query):
         url = f"https://us.vestiairecollective.com/search/?q={query.replace(' ', '%20')}"
         session_id = Utility.generate_random_session()
         results = []
@@ -127,7 +127,8 @@ class VestiaireScraper:
                         "product_id": product_id,
                         "category": category,
                         "item_details": details,
-                        "image_query": image_query
+                        "image_query": image_query,
+                        "search_query": search_query,
                     })
 
                 except Exception as e:

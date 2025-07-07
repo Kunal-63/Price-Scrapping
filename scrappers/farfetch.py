@@ -49,7 +49,7 @@ class FarfetchScraper:
         async with self.semaphore:
             return await self.client.async_scrape(config)
 
-    async def search(self, query, category, product_id, image_query):
+    async def search(self, query, category, product_id, image_query, search_query):
         self.logger.info(f"🔍 Searching Farfetch for query: {query}")
         url = f"https://www.farfetch.com/shopping/men/items.aspx?query={quote(query)}"
 
@@ -101,6 +101,7 @@ class FarfetchScraper:
                         "top_rated": True,
                         "source": "farfetch", 
                         "image_query": image_query,
+                        "search_query": search_query,
                     }
                     detail_tasks.append(self.get_product_details(product_url))
                     results.append(base_data)

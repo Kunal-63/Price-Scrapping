@@ -37,17 +37,17 @@ class GrailedScraper:
         self.semaphore = asyncio.Semaphore(10) 
 
     @backoff.on_exception(
-    backoff.expo,
-    ScrapflyScrapeError,
-    max_tries=4,
-    giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)  # retry only if it's timeout
-)
+        backoff.expo,
+        ScrapflyScrapeError,
+        max_tries=4,
+        giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)  # retry only if it's timeout
+    )
     async def scrape_with_retries(self, config):
         self.logger.debug(f"⏳ Scraping URL: {config.url}")
         async with self.semaphore:
             return await self.client.async_scrape(config)
 
-    async def search(self, query, category, product_id, image_query):
+    async def search(self, query, category, product_id, image_query, search_query):
         self.logger.info(f"🔍 Searching Grailed for query: {query}")
         url = f"https://www.grailed.com/shop?query={quote(query)}"
 
@@ -58,6 +58,7 @@ class GrailedScraper:
                 render_js=True,
                 wait_for_selector="div.UserItem_root__8Q2R_",
                 country="US",
+                session=Utility.generate_random_session(),
                 retry=False,
                 timeout=120000
             ))
@@ -112,6 +113,7 @@ class GrailedScraper:
                     "top_rated": False,
                     "source": "grailed",
                     "image_query": image_query,
+                    "search_query": search_query,
                 }
                 results.append(base_data)
                 detail_tasks.append(self.get_product_details(full_url))

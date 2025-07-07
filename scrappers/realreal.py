@@ -48,7 +48,7 @@ class RealRealScraper:
             return await self.client.async_scrape(config)
 
 
-    async def search(self, query, category, product_id, image_query):
+    async def search(self, query, category, product_id, image_query, search_query):
         self.logger.info(f"🔍 Searching The RealReal for query: {query}")
         url = f"https://www.therealreal.com/products?keywords={quote(query)}"
 
@@ -102,6 +102,7 @@ class RealRealScraper:
                     "top_rated": True,
                     "source": "therealreal",
                     "image_query": image_query,
+                    "search_query": search_query,
                 }
 
                 results.append(base_data)

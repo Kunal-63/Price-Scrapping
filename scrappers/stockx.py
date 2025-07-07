@@ -45,7 +45,7 @@ class StockXScraper:
         async with self.semaphore:
             return await self.client.async_scrape(config)
 
-    async def search(self, query, category, product_id, image_query):
+    async def search(self, query, category, product_id, image_query, search_query):
         self.logger.info(f"🔍 Searching StockX for query: {query}")
         url = f"https://stockx.com/search?s={quote(query)}"
 
@@ -100,6 +100,7 @@ class StockXScraper:
                     "item_details": item_details,
                     "source": "stockx",
                     "image_query": image_query,
+                    "search_query": search_query,
                 })
 
             await asyncio.gather(*[

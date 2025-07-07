@@ -32,20 +32,20 @@ class Chrono24Scraper:
         self.beauty_table = dynamodb.Table("BeautyTable")
         self.jewelry_table = dynamodb.Table("JewelryTable")
 
-        self.semaphore = asyncio.Semaphore(10) 
+        self.semaphore = asyncio.Semaphore(5) 
 
     @backoff.on_exception(
-    backoff.expo,
-    ScrapflyScrapeError,
-    max_tries=4,
-    giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)  # retry only if it's timeout
-)
+        backoff.expo,
+        ScrapflyScrapeError,
+        max_tries=4,
+        giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)  # retry only if it's timeout
+    )
     async def scrape_with_retries(self, config):
         self.logger.debug(f"⏳ Scraping URL: {config.url}")
         async with self.semaphore:
             return await self.client.async_scrape(config)
 
-    async def search(self, query, category, product_id, image_query):
+    async def search(self, query, category, product_id, image_query, search_query):
         url = f"https://www.chrono24.com/search/index.htm?dosearch=true&query={quote(query)}"
         self.logger.info(f"📡 Fetching Chrono24 results for query: {query}")
 
@@ -101,6 +101,7 @@ class Chrono24Scraper:
                                     "source": "chrono24",
                                     "category": category,
                                     "image_query": image_query,
+                                    "search_query": search_query
                                 }
 
                                 results.append(base_data)

@@ -47,7 +47,7 @@ class RebagScraper:
         async with self.semaphore:
             return await self.client.async_scrape(config)
 
-    async def search(self, query, category, product_id, image_query):
+    async def search(self, query, category, product_id, image_query, search_query):
         self.logger.info(f"🔍 Searching Rebag for query: {query}")
         url = f"https://shop.rebag.com/collections/all?q={quote(query)}"
 
@@ -105,7 +105,8 @@ class RebagScraper:
                     "source": "rebag",
                     "product_id": product_id,
                     "category": category,
-                    "image_query": image_query
+                    "image_query": image_query,
+                    "search_query": search_query,
                 }
 
                 detail = await self.get_product_details(full_url)

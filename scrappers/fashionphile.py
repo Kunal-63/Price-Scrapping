@@ -49,7 +49,7 @@ class FashionphileScraper:
         async with self.semaphore:
             return await self.client.async_scrape(config)
 
-    async def search(self, query, category, product_id, image_query):
+    async def search(self, query, category, product_id, image_query, search_query):
         self.logger.info(f"🔍 Searching Fashionphile for query: {query}")
         url = f"https://www.fashionphile.com/shop?search={quote(query)}"
         try:
@@ -105,6 +105,7 @@ class FashionphileScraper:
                     "top_rated": True,
                     "source": "fashionphile",
                     "image_query": image_query,
+                    "search_query": search_query
                 }
                 results.append(base_data)
                 detail_tasks.append(self.get_product_details(url_full))

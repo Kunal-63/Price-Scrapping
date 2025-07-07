@@ -20,6 +20,6 @@ class ProductModel:
         self.category = category
         self.created_at = datetime.utcnow().isoformat()
         self.image_query = base_data.get("image_query")
-
+        self.search_query = base_data.get("search_query")
     def to_dict(self):
         return self.__dict__
