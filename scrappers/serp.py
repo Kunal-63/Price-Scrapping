@@ -40,7 +40,7 @@ class SerpAPISearcher:
                 res.raise_for_status()
                 return res
 
-    async def search(self, query, category, product_id, image_query):
+    async def search(self, query, category, product_id, image_query, search_query):
         self.logger.info(f"🔍 Searching SerpAPI for query: {query}")
 
         params = {
@@ -81,7 +81,8 @@ class SerpAPISearcher:
                     "image_url": image_url,
                     "top_rated": False,
                     "source": "google_shopping",
-                    "image_query": image_query
+                    "image_query": image_query,
+                    "search_query": search_query
                 })
                 detail_tasks.append(self.get_product_details(link))
 
