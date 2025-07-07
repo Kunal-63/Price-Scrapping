@@ -26,7 +26,7 @@ class FashionphileScraper:
         self.client = ScrapflyClient(key=scrapfly_key)
         self.logger = get_logger()
 
-        session = Session(profile_name="auricore-dev-kunal")
+        session = Session()
         dynamodb = session.resource("dynamodb", region_name="us-east-1")
         self.product_table = dynamodb.Table("ProductsTable")
         self.shoes_table = dynamodb.Table("ShoesTable")
