@@ -20,7 +20,7 @@ from utils.gemini import GeminiRefiner
 router = APIRouter()
 logger = get_logger()
 
-session = Session(profile_name="auricore-dev-kunal")
+session = Session()
 dynamodb = session.resource("dynamodb", region_name="us-east-2")
 product_table = dynamodb.Table("ProductsTable")
 category_tables = {

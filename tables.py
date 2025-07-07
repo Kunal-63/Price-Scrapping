@@ -36,7 +36,7 @@ def create_table_if_not_exists(dynamodb, table_name, key_name, key_type='S'):
 
 if __name__ == "__main__":
     # Use AWS SSO profile
-    session = Session(profile_name="auricore-dev-kunal")
+    session = Session()
     dynamodb = session.resource("dynamodb", region_name="us-east-2")
 
     # Product and metadata tables
