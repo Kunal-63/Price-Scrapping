@@ -14,6 +14,8 @@ from models.clothing import ClothingModel
 from boto3.session import Session
 from boto3.dynamodb.conditions import Attr
 from config.scrapper_config import Config
+from models.beauty import BeautyModel
+from models.jewelry import JewelryModel
 
 class GoogleShoppingScraper:
     def __init__(self, client):

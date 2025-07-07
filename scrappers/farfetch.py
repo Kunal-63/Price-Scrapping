@@ -16,6 +16,8 @@ from boto3.session import Session
 from boto3.dynamodb.conditions import Attr
 import datetime
 from config.scrapper_config import Config
+from models.beauty import BeautyModel
+from models.jewelry import JewelryModel
 
 class FarfetchScraper:
     def __init__(self, client):
@@ -29,6 +31,8 @@ class FarfetchScraper:
         self.bags_table = dynamodb.Table("BagsTable")
         self.accessories_table = dynamodb.Table("AccessoriesTable")
         self.clothing_table = dynamodb.Table("ClothingTable")
+        self.beauty_table = dynamodb.Table("BeautyTable")
+        self.jewelry_table = dynamodb.Table("JewelryTable")
 
     async def search(self, query, category, product_id):
         self.logger.info(f"🔍 Searching Farfetch for query: {query}")
@@ -209,10 +213,16 @@ class FarfetchScraper:
             "Brand": details.get("brand"),
             "Condition": base_data.get("condition", "New"),
             "Year": "Unknown",
-            "Size": None,
+            "Size": details.get("size"),
             "Color": ", ".join(details.get("highlights", [])) if details.get("highlights") else None,
             "Box/Papers": details.get("composition"),
-            "Dust Bag": details.get("farfetch_id")
+            "Dust Bag": details.get("farfetch_id"),
+            "Designer": details.get("brand"),
+            "Title": details.get("title"),
+            "Stone": details.get("stone"),
+            "Metal": details.get("metal"),
+            "Box": details.get("box"),
+            "Gender": details.get("gender")
         }
 
         if category == "Shoes":
@@ -227,5 +237,11 @@ class FarfetchScraper:
         elif category == "Clothing":
             meta = ClothingModel(product.product_id, specs, base_data["url"])
             self.clothing_table.put_item(Item=meta.to_dict())
+        elif category == "Beauty":
+            meta = BeautyModel(product.product_id, specs, base_data["url"])
+            self.beauty_table.put_item(Item=meta.to_dict())
+        elif category == "Jewelry":
+            meta = JewelryModel(product.product_id, specs, base_data["url"])
+            self.jewelry_table.put_item(Item=meta.to_dict())
         else:
             self.logger.warning(f"❌ Unknown category: {category}, skipping metadata.")

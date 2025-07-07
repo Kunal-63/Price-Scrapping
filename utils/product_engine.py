@@ -67,7 +67,7 @@ class ProductSearchEngine:
 
         elif query:
             logger.info("Refining query using Gemini (from text query)...")
-            final_query = self.query_refiner.refine_query(query)
+            final_query = query.strip()
 
         if not final_query:
             logger.error("No valid query generated.")

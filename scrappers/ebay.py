@@ -30,6 +30,8 @@ class EbayScraper:
         self.bags_table = dynamodb.Table("BagsTable")
         self.accessories_table = dynamodb.Table("AccessoriesTable")
         self.clothing_table = dynamodb.Table("ClothingTable")
+        self.beauty_table = dynamodb.Table("BeautyTable")
+        self.jewelry_table = dynamodb.Table("JewelryTable")
 
     async def search(self, query, category, product_id):
         if(not category):
@@ -273,5 +275,13 @@ class EbayScraper:
         elif category == "Clothing":
             meta = ClothingModel(product.product_id, specs, base_data["url"])
             self.clothing_table.put_item(Item=meta.to_dict())
+        elif category == "Beauty":
+            from models.beauty import BeautyModel
+            meta = BeautyModel(product.product_id, specs, base_data["url"])
+            self.beauty_table.put_item(Item=meta.to_dict())
+        elif category == "Jewelry":
+            from models.jewelry import JewelryModel
+            meta = JewelryModel(product.product_id, specs, base_data["url"])
+            self.jewelry_table.put_item(Item=meta.to_dict())
         else:
             self.logger.warning(f"❌ Unknown category: {category}, skipping metadata.")

@@ -8,6 +8,7 @@ class ClothingModel:
         self.brand = specs.get("Brand")
         self.condition = specs.get("Condition")
         self.size = specs.get("Size")
+        self.gender = specs.get("Gender")
         self.created_at = datetime.datetime.utcnow().isoformat()
         self.url = url
 

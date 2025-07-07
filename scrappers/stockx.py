@@ -13,6 +13,8 @@ from models.bags import BagsModel
 from models.accessories import AccessoriesModel
 from models.clothing import ClothingModel
 import asyncio
+from models.beauty import BeautyModel
+from models.jewelry import JewelryModel
 
 class StockXScraper:
     def __init__(self, scrapfly_key):
@@ -26,6 +28,8 @@ class StockXScraper:
         self.bags_table = dynamodb.Table("BagsTable")
         self.accessories_table = dynamodb.Table("AccessoriesTable")
         self.clothing_table = dynamodb.Table("ClothingTable")
+        self.beauty_table = dynamodb.Table("BeautyTable")
+        self.jewelry_table = dynamodb.Table("JewelryTable")
 
     async def search(self, query, category, product_id):
         self.logger.info(f"🔍 Searching StockX for query: {query}")
@@ -212,6 +216,12 @@ class StockXScraper:
             "Closure": details.get("closure"),
             "Box/Papers": None,
             "Dust Bag": details.get("description"),
+            "Designer": details.get("designers") or details.get("brand"),
+            "Title": details.get("title"),
+            "Stone": details.get("stone"),
+            "Metal": details.get("metal"),
+            "Box": details.get("box"),
+            "Gender": details.get("gender"),
         }
 
         if category == "Shoes":
@@ -226,5 +236,11 @@ class StockXScraper:
         elif category == "Clothing":
             meta = ClothingModel(product.product_id, specs, base_data["url"])
             self.clothing_table.put_item(Item=meta.to_dict())
+        elif category == "Beauty":
+            meta = BeautyModel(product.product_id, specs, base_data["url"])
+            self.beauty_table.put_item(Item=meta.to_dict())
+        elif category == "Jewelry":
+            meta = JewelryModel(product.product_id, specs, base_data["url"])
+            self.jewelry_table.put_item(Item=meta.to_dict())
         else:
             self.logger.warning(f"❌ Unknown category: {category}, skipping metadata.")

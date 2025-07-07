@@ -16,6 +16,8 @@ from models.shoes import ShoesModel
 from models.accessories import AccessoriesModel
 from models.clothing import ClothingModel
 from config.scrapper_config import Config
+from models.beauty import BeautyModel
+from models.jewelry import JewelryModel
 
 
 class WatchChartsScraper:
@@ -30,6 +32,8 @@ class WatchChartsScraper:
         self.shoes_table = dynamodb.Table("ShoesTable")
         self.accessories_table = dynamodb.Table("AccessoriesTable")
         self.clothing_table = dynamodb.Table("ClothingTable")
+        self.beauty_table = dynamodb.Table("BeautyTable")
+        self.jewelry_table = dynamodb.Table("JewelryTable")
 
         self.executor = ThreadPoolExecutor(max_workers=10)
 
@@ -199,6 +203,12 @@ class WatchChartsScraper:
             "Luminous": specs_data.get("luminous"),
             "Year": details.get("year", "Unknown") or specs_data.get("year"),
             "Dust Bag": details.get("dust bag") or specs_data.get("dust_bag") or details.get("description"),
+            "Gender": details.get("gender"),
+            "Designer": details.get("designers") or details.get("brand") or specs_data.get("designer"),
+            "Title": details.get("title") or specs_data.get("title"),
+            "Stone": details.get("stone") or specs_data.get("stone"),
+            "Metal": details.get("metal") or specs_data.get("metal"),
+            "Box": details.get("box") or specs_data.get("box"),
         }
 
         # Save into the corresponding category table
@@ -214,5 +224,11 @@ class WatchChartsScraper:
         elif category == "Clothing":
             meta = ClothingModel(product.product_id, specs, base_data["url"])
             self.clothing_table.put_item(Item=meta.to_dict())
+        elif category == "Beauty":
+            meta = BeautyModel(product.product_id, specs, base_data["url"])
+            self.beauty_table.put_item(Item=meta.to_dict())
+        elif category == "Jewelry":
+            meta = JewelryModel(product.product_id, specs, base_data["url"])
+            self.jewelry_table.put_item(Item=meta.to_dict())
         else:
             self.logger.warning(f"❌ Unknown category: {category}, skipping metadata.")

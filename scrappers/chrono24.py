@@ -29,6 +29,8 @@ class Chrono24Scraper:
         self.bags_table = dynamodb.Table("BagsTable")
         self.accessories_table = dynamodb.Table("AccessoriesTable")
         self.clothing_table = dynamodb.Table("ClothingTable")
+        self.beauty_table = dynamodb.Table("BeautyTable")
+        self.jewelry_table = dynamodb.Table("JewelryTable")
 
     async def search(self, query, category, product_id):
         url = f"https://www.chrono24.com/search/index.htm?dosearch=true&query={quote(query)}"
@@ -212,7 +214,25 @@ class Chrono24Scraper:
                 "Size": clean_size(specs.get("Case diameter"))
             }, base_data["url"])
             self.clothing_table.put_item(Item=meta.to_dict())
-
+        elif category == "Beauty":
+            from models.beauty import BeautyModel
+            meta = BeautyModel(product.product_id, {
+                "Brand": specs.get("Brand"),
+                "Condition": specs.get("Condition"),
+                "Size": clean_size(specs.get("Case diameter")),
+                "Type": specs.get("Dial") or specs.get("Bezel material")
+            }, base_data["url"])
+            self.beauty_table.put_item(Item=meta.to_dict())
+        elif category == "Jewelry":
+            from models.jewelry import JewelryModel
+            meta = JewelryModel(product.product_id, {
+                "Brand": specs.get("Brand"),
+                "Condition": specs.get("Condition"),
+                "Metal": specs.get("Metal"),
+                "Stone": specs.get("Stone"),
+                "Box": specs.get("Scope of delivery")
+            }, base_data["url"])
+            self.jewelry_table.put_item(Item=meta.to_dict())
         else:
             self.logger.warning(f"❌ Unknown category: {category}, skipping metadata.")
         self.logger.info(f"✅ Product metadata inserted for {base_data['url']} in category {category}")

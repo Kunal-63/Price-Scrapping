@@ -15,6 +15,8 @@ from models.clothing import ClothingModel
 from boto3.session import Session
 from boto3.dynamodb.conditions import Attr
 from config.scrapper_config import Config
+from models.beauty import BeautyModel
+from models.jewelry import JewelryModel
 
 class GrailedScraper:
     def __init__(self, scrapfly_key):
@@ -28,6 +30,8 @@ class GrailedScraper:
         self.bags_table = dynamodb.Table("BagsTable")
         self.accessories_table = dynamodb.Table("AccessoriesTable")
         self.clothing_table = dynamodb.Table("ClothingTable")
+        self.beauty_table = dynamodb.Table("BeautyTable")
+        self.jewelry_table = dynamodb.Table("JewelryTable")
 
     async def search(self, query, category, product_id):
         self.logger.info(f"🔍 Searching Grailed for query: {query}")
@@ -190,7 +194,13 @@ class GrailedScraper:
             "Size": details.get("size"),
             "Color": details.get("color"),
             "Box/Papers": details.get("box"),
-            "Dust Bag": details.get("dust bag") or details.get("description")
+            "Dust Bag": details.get("dust bag") or details.get("description"),
+            "Designer": details.get("designers"),
+            "Title": details.get("title"),
+            "Stone": details.get("stone"),
+            "Metal": details.get("metal"),
+            "Box": details.get("box"),
+            "Gender": details.get("gender")
         }
 
         if category == "Shoes":
@@ -205,5 +215,11 @@ class GrailedScraper:
         elif category == "Clothing":
             meta = ClothingModel(product.product_id, specs, base_data["url"])
             self.clothing_table.put_item(Item=meta.to_dict())
+        elif category == "Beauty":
+            meta = BeautyModel(product.product_id, specs, base_data["url"])
+            self.beauty_table.put_item(Item=meta.to_dict())
+        elif category == "Jewelry":
+            meta = JewelryModel(product.product_id, specs, base_data["url"])
+            self.jewelry_table.put_item(Item=meta.to_dict())
         else:
             self.logger.warning(f"❌ Unknown category: {category}, skipping metadata.")

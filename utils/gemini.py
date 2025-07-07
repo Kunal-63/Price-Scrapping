@@ -4,8 +4,11 @@ from urllib.parse import urlparse
 from config.scrapper_config import Config
 
 class GeminiRefiner:
+    def __init__(self):
+        self.api_key = Config.GEMINI_API_KEY
+        self.api_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+
     def refine_query(self, base_query, image_url=None):
-        return base_query
         if not base_query:
             print("❌ No base query provided.")
             return ""
@@ -51,3 +54,44 @@ class GeminiRefiner:
         except requests.exceptions.RequestException as e:
             print(f"❌ Error using Gemini API: {e}")
             return base_query
+
+    def score_product(self, product: dict, category_metadata: dict, query: str) -> int:
+        if not query:
+            return 100
+
+        prompt = (
+            "You are an intelligent search relevance evaluator. "
+            "Given a search query, a product's core details, and its category-specific metadata, return a score from 0 to 100 representing how relevant the product is to the query.\n\n"
+            f"Search query: {query}\n\n"
+            "Product details:\n"
+            f"- Title: {product.get('title', '')}\n"
+            f"- Category: {product.get('category', '')}\n"
+            f"- Condition: {product.get('condition', '')}\n"
+            f"- Seller: {product.get('seller', '')}\n"
+            f"- Location: {product.get('location', '')}\n"
+            f"- Price: {product.get('listing_price', '')}\n"
+            f"- Source: {product.get('source', '')}\n\n"
+            "Category metadata:\n"
+            + "\n".join(f"- {k}: {v}" for k, v in category_metadata.items() if v) +
+            "\n\nOnly return a single integer score from 0 to 100 (no explanation, no words)."
+        )
+
+        try:
+            response = requests.post(
+                self.api_url,
+                headers={"Content-Type": "application/json"},
+                params={"key": self.api_key},
+                json={"contents": [{"parts": [{"text": prompt}]}]},
+                timeout=10
+            )
+            response.raise_for_status()
+            data = response.json()
+            parts = data.get("candidates", [])[0].get("content", {}).get("parts", [])
+            if parts:
+                text = parts[0].get("text", "").strip()
+                score = int("".join(filter(str.isdigit, text)))
+                return max(0, min(100, score))
+        except Exception as e:
+            print(f"❌ Gemini scoring error: {e}")
+
+        return 0

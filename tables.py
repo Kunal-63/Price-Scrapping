@@ -45,3 +45,5 @@ if __name__ == "__main__":
     create_table_if_not_exists(dynamodb, "BagsTable", "url")
     create_table_if_not_exists(dynamodb, "AccessoriesTable", "url")
     create_table_if_not_exists(dynamodb, "ClothingTable", "url")
+    create_table_if_not_exists(dynamodb, "BeautyTable", "url")
+    create_table_if_not_exists(dynamodb, "JewelryTable", "url")
