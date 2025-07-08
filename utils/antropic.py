@@ -1,3 +1,4 @@
+from decimal import Decimal
 import os
 from urllib.parse import urlparse
 import requests
@@ -5,7 +6,7 @@ import backoff
 from functools import lru_cache
 import anthropic
 
-class GeminiRefiner:
+class AnthropicRefiner:
     def __init__(self):
         self.api_key = "os.environ.get("ANTHROPIC_API_KEY", "")"
         self.client = anthropic.Anthropic(api_key=self.api_key)
@@ -60,20 +61,32 @@ class GeminiRefiner:
     def score_product(self, product: dict, category_metadata: dict, query: str) -> int:
         if not query:
             return 100
-        
-        lines = [
-            "You are an intelligent search relevance evaluator.",
-            "Given a search query, a product's core details, and its category metadata,",
-            "return a score from 0 to 100 representing relevance.",
-            f"Search query: {query}"
-        ]
-        lines += [f"- {k}: {v}" for k, v in product.items()]
-        lines += ["Category metadata:"] + [f"- {k}: {v}" for k, v in category_metadata.items()]
-        lines.append("Only return a single integer between 0 and 100 (no explanation).")
-        prompt = "\n".join(lines)
 
-        text = self.call_claude(prompt).strip()
-        return max(0, min(100, int("".join(filter(str.isdigit, text))))) if text else 0
+        def sanitize(val):
+            if isinstance(val, (str, int, float, Decimal)):
+                return str(val)
+            return ""
+
+        product_lines = [f"- {k}: {sanitize(v)}" for k, v in product.items()]
+        metadata_lines = [f"- {k}: {sanitize(v)}" for k, v in category_metadata.items()]
+
+        prompt = (
+            "You are an intelligent search relevance evaluator.\n\n"
+            "Your task is to evaluate how relevant a product is to a user's search query.\n"
+            "Return an integer between 0 and 100 that reflects how well the product matches the query.\n\n"
+            f"🔍 Search Query:\n{query}\n\n"
+            f"📦 Product Details:\n" + "\n".join(product_lines) + "\n\n"
+            f"🗂️ Category Metadata:\n" + "\n".join(metadata_lines) + "\n\n"
+            "🎯 Output ONLY a single integer from 0 to 100. No explanation, no formatting, no extra text."
+        )
+
+        try:
+            text = self.call_claude(prompt).strip()
+            score = int("".join(filter(str.isdigit, text.split()[0])))  # Only use first token
+            return max(0, min(100, score))
+        except Exception as e:
+            print(f"⚠️ Scoring failed for query '{query}': {e}")
+        return 0
 
     def refine_query_with_image(self, product_query: str, image_keywords: str) -> str:
         prompt = (

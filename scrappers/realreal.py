@@ -9,7 +9,7 @@ from utils.logger import get_logger
 from utils.utility import Utility
 from models.product_item import ProductModel
 from price_parser import Price
-from utils.gemini import GeminiRefiner
+from utils.antropic import AnthropicRefiner
 from boto3.session import Session
 from boto3.dynamodb.conditions import Attr
 from config.scrapper_config import Config
@@ -32,7 +32,7 @@ class RealRealScraper:
         self.jewelry_table = dynamodb.Table("JewelryTable")
 
         self.semaphore = asyncio.Semaphore(10)
-        self.gemini_refiner = GeminiRefiner()
+        self.anthropic_refiner = AnthropicRefiner()
 
     @backoff.on_exception(
     backoff.expo,
@@ -98,8 +98,8 @@ class RealRealScraper:
                 size = size_tag.text.strip().replace("Size:", "").strip() if size_tag else None
 
                 # Use Gemini fallback if missing
-                condition = condition or self.gemini_refiner.extract_condition_from_title(title=title)
-                size = size or self.gemini_refiner.extract_size_from_title(title=title)
+                condition = condition or self.anthropic_refiner.extract_condition_from_title(title=title)
+                size = size or self.anthropic_refiner.extract_size_from_title(title=title)
 
                 item = {
                     "title": title,

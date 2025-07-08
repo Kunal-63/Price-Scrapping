@@ -11,14 +11,14 @@ from config.scrapper_config import Config
 from boto3.session import Session
 from boto3.dynamodb.conditions import Attr
 from models.product_item import ProductModel
-from utils.gemini import GeminiRefiner
+from utils.antropic import AnthropicRefiner
 import backoff
 
 class StockXScraper:
     def __init__(self, scrapfly_key):
         self.client = ScrapflyClient(key=scrapfly_key)
         self.logger = get_logger()
-        self.gemini_refiner = GeminiRefiner()
+        self.anthropic_refiner = AnthropicRefiner()
         self.semaphore = asyncio.Semaphore(5)
 
         session = Session()
@@ -75,7 +75,7 @@ class StockXScraper:
 
                 url_full = f"https://stockx.com{link_el['href']}"
                 image_url = image_el["src"] if image_el else None
-                size = self.gemini_refiner.extract_size_from_title(title)
+                size = self.anthropic_refiner.extract_size_from_title(title)
 
                 base_data = {
                     "title": title,

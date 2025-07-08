@@ -14,7 +14,6 @@ class ProductModel:
         self.location = base_data.get("location", "Unknown")
         self.top_rated = base_data.get("top_rated", False)
         self.source = base_data.get("source", "unknown")
-        self.bid_count = int(base_data.get("bid_count", "0").replace("+", "").strip()) if base_data.get("bid_count") else 0
         self.size = base_data.get("size")
         self.category = category
         self.created_at = datetime.utcnow().isoformat()

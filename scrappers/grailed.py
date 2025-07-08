@@ -12,7 +12,7 @@ from boto3.session import Session
 from boto3.dynamodb.conditions import Attr
 from config.scrapper_config import Config
 from price_parser.parser import Price
-from utils.gemini import GeminiRefiner
+from utils.antropic import AnthropicRefiner
 import backoff
 
 class GrailedScraper:
@@ -23,7 +23,7 @@ class GrailedScraper:
         dynamodb = session.resource("dynamodb", region_name="us-east-1")
         self.product_table = dynamodb.Table("ProductsTable")
         self.semaphore = asyncio.Semaphore(10)
-        self.gemini_refiner = GeminiRefiner()
+        self.anthropic_refiner = AnthropicRefiner()
 
     @backoff.on_exception(
         backoff.expo,
@@ -95,9 +95,9 @@ class GrailedScraper:
                 size = size_match.group(1).strip() if size_match else None
 
                 if not size:
-                    size = self.gemini_refiner.extract_size_from_title(title=title)
+                    size = self.anthropic_refiner.extract_size_from_title(title=title)
 
-                condition = self.gemini_refiner.extract_condition_from_title(title=title)
+                condition = self.anthropic_refiner.extract_condition_from_title(title=title)
 
                 results.append({
                     "title": combined_title,

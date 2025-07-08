@@ -7,7 +7,7 @@ from urllib.parse import quote
 from scrapfly import ScrapflyClient, ScrapeConfig
 
 from utils.image_search import ImageSearcher
-from utils.gemini import GeminiRefiner
+from utils.antropic import AnthropicRefiner
 from config.scrapper_config import Config
 from scrappers.ebay import EbayScraper
 from scrappers.serp import SerpAPISearcher
@@ -32,7 +32,7 @@ class ProductSearchEngine:
         client = ScrapflyClient(key=Config.SCRAPFLY_KEY)
 
         self.image_searcher = ImageSearcher()
-        self.query_refiner = GeminiRefiner()
+        self.query_refiner = AnthropicRefiner()
         self.ebay_scraper = EbayScraper(Config.SCRAPFLY_KEY)
         self.serpapi_searcher = SerpAPISearcher()
         self.stockx_scraper = StockXScraper(Config.SCRAPFLY_KEY)

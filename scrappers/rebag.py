@@ -13,7 +13,7 @@ from models.product_item import ProductModel
 from config.scrapper_config import Config
 from price_parser.parser import Price
 import backoff
-from utils.gemini import GeminiRefiner
+from utils.antropic import AnthropicRefiner
 
 class RebagScraper:
     def __init__(self, scrapfly_key):
@@ -25,7 +25,7 @@ class RebagScraper:
         self.product_table = dynamodb.Table("ProductsTable")
         
         self.semaphore = asyncio.Semaphore(10)
-        self.gemini_refiner = GeminiRefiner()
+        self.anthropic_refiner = AnthropicRefiner()
 
     @backoff.on_exception(
     backoff.expo,
@@ -88,10 +88,10 @@ class RebagScraper:
                     if len(parts) > 2: alt_size = parts[2]
 
                 if not condition:
-                    condition = self.gemini_refiner.extract_condition_from_title(title=title)
+                    condition = self.anthropic_refiner.extract_condition_from_title(title=title)
 
                 if not size:
-                    size = self.gemini_refiner.extract_size_from_title(title=title)
+                    size = self.anthropic_refiner.extract_size_from_title(title=title)
 
                 price_tag = card.select_one(".rewards-plus-plp__product-price-value")
                 price_text = price_tag.text.strip() if price_tag else "$0"

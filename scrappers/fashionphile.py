@@ -13,7 +13,7 @@ from boto3.dynamodb.conditions import Attr
 import datetime
 from config.scrapper_config import Config
 import backoff
-from utils.gemini import GeminiRefiner
+from utils.antropic import AnthropicRefiner
 from price_parser import Price
 
 class FashionphileScraper:
@@ -32,7 +32,7 @@ class FashionphileScraper:
         self.jewelry_table = dynamodb.Table("JewelryTable")
 
         self.semaphore = asyncio.Semaphore(10)
-        self.gemini_refiner = GeminiRefiner()
+        self.anthropic_refiner = AnthropicRefiner()
 
     @backoff.on_exception(
         backoff.expo,
@@ -94,9 +94,9 @@ class FashionphileScraper:
                 if cond_tag and "Condition:" in cond_tag.text:
                     condition = cond_tag.text.replace("Condition:", "").strip()
                 if not condition:
-                    condition = self.gemini_refiner.extract_condition_from_title(title=title)
+                    condition = self.anthropic_refiner.extract_condition_from_title(title=title)
 
-                size = self.gemini_refiner.extract_size_from_title(title=title)
+                size = self.anthropic_refiner.extract_size_from_title(title=title)
 
                 base_data = {
                     "title": title,

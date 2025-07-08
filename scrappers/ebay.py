@@ -11,7 +11,7 @@ from models.product_item import ProductModel
 from boto3.session import Session
 from boto3.dynamodb.conditions import Attr
 from config.scrapper_config import Config
-from utils.gemini import GeminiRefiner
+from utils.antropic import AnthropicRefiner
 import backoff
 
 class EbayScraper:
@@ -23,7 +23,7 @@ class EbayScraper:
         session = Session()
         dynamodb = session.resource("dynamodb", region_name="us-east-1")
         self.product_table = dynamodb.Table("ProductsTable")
-        self.gemini_refiner = GeminiRefiner()
+        self.anthropic_refiner = AnthropicRefiner()
 
     async def search(self, query, category, product_id, image_query, search_query):
         if not category:
@@ -52,33 +52,52 @@ class EbayScraper:
     async def get_active_listings(self, query, category, product_id, image_query, search_query):
         listings = []
         sem = asyncio.Semaphore(self.MAX_CONCURRENT_DETAIL_FETCHES)
+
+        urls = [
+            f"https://www.ebay.com/sch/i.html?_nkw={quote(query)}&_sop=12&_pgn={page}"
+            for page in range(1, 4)
+        ]
+
+        scrape_configs = [
+            ScrapeConfig(
+                url=url,
+                render_js=False,
+                asp=True,
+                wait_for_selector=".s-item__title",
+                session=Utility.generate_random_session(),
+                retry=False,
+                timeout=120000,
+                country="US",
+            )
+            for url in urls
+        ]
+
+        self.logger.debug(f"🚀 Fetching active listings concurrently from {len(urls)} pages.")
+        try:
+            responses = await asyncio.gather(
+                *(self.scrape_with_retries(cfg) for cfg in scrape_configs),
+                return_exceptions=True
+            )
+        except Exception as e:
+            self.logger.exception(f"❌ Error during concurrent page scraping: {e}")
+            return listings
+
         tasks = []
-
-        for page in range(1, 4):
-            url = f"https://www.ebay.com/sch/i.html?_nkw={quote(query)}&_sop=12&_pgn={page}"
-            self.logger.debug(f"📱 Fetching active listings from eBay page {page}: {url}")
-
-            try:
-                resp = await self.scrape_with_retries(ScrapeConfig(
-                    url=url,
-                    render_js=True,
-                    asp=True,
-                    wait_for_selector=".s-item__title",
-                    session=Utility.generate_random_session(),
-                    retry=False,
-                    timeout=120000,
-                    country="US",
-                ))
-            except Exception as e:
-                self.logger.exception(f"❌ Failed to fetch active listings page {page}: {e}")
+        for response in responses:
+            if isinstance(response, Exception):
+                self.logger.warning(f"⚠️ Skipping failed page response: {response}")
                 continue
 
-            soup = BeautifulSoup(resp.scrape_result["content"], "html.parser")
-            items = soup.select(".s-item")
-            if not items:
-                break
-            for item in items:
-                tasks.append(self._parse_item(item, sem, product_id, image_query, search_query, category, listings))
+            try:
+                soup = BeautifulSoup(response.scrape_result["content"], "html.parser")
+                items = soup.select(".s-item")
+                for item in items:
+                    tasks.append(self._parse_item(
+                        item, sem, product_id, image_query, search_query, category, listings
+                    ))
+            except Exception as e:
+                self.logger.exception(f"❌ Failed to parse response content: {e}")
+                continue
 
         await asyncio.gather(*tasks)
         self.logger.info(f"✅ Active listings fetched and parsed: {len(listings)}")
@@ -134,13 +153,12 @@ class EbayScraper:
                 price_value = price_data.amount_float if price_data.amount_float else None
 
                 detail_url = link_el['href']
-                size = self.gemini_refiner.extract_size_from_title(title_text)
+                size = self.anthropic_refiner.extract_size_from_title(title_text)
 
                 base_data = {
                     "title": title_text,
                     "product_id": product_id or str(np.random.randint(100000, 999999)),
                     "listing_price": price_value,
-                    "bid_count": item.select_one(".s-item__bids").text.strip() if item.select_one(".s-item__bids") else "0",
                     "url": detail_url,
                     "condition": item.select_one(".SECONDARY_INFO").text.strip() if item.select_one(".SECONDARY_INFO") else "Unknown",
                     "seller": (item.select_one(".s-item__seller-info-text") or item.select_one(".s-item__subtitle")).text.replace("Seller:", "").strip() if (item.select_one(".s-item__seller-info-text") or item.select_one(".s-item__subtitle")) else "Unknown",

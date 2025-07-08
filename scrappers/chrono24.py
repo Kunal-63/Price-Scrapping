@@ -11,7 +11,7 @@ import backoff
 from price_parser import Price
 from utils.logger import get_logger
 from utils.utility import Utility
-from utils.gemini import GeminiRefiner
+from utils.antropic import AnthropicRefiner
 from models.product_item import ProductModel
 from config.scrapper_config import Config
 
@@ -19,7 +19,7 @@ class Chrono24Scraper:
     def __init__(self, scrapfly_key):
         self.client = ScrapflyClient(key=scrapfly_key)
         self.logger = get_logger()
-        self.gemini_refiner = GeminiRefiner()
+        self.anthropic_refiner = AnthropicRefiner()
         self.semaphore = asyncio.Semaphore(10)
 
         session = Session()

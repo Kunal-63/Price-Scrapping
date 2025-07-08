@@ -7,7 +7,7 @@ from utils.logger import get_logger
 from boto3.session import Session
 from boto3.dynamodb.conditions import Attr
 from models.product_item import ProductModel
-from utils.gemini import GeminiRefiner
+from utils.antropic import AnthropicRefiner
 from config.scrapper_config import Config
 from price_parser import Price
 import backoff
@@ -28,7 +28,7 @@ class VestiaireScraper:
         self.beauty_table = dynamodb.Table("BeautyTable")
         self.jewelry_table = dynamodb.Table("JewelryTable")
 
-        self.gemini_refiner = GeminiRefiner()
+        self.anthropic_refiner = AnthropicRefiner()
         self.semaphore = asyncio.Semaphore(10)
 
     @backoff.on_exception(
@@ -107,8 +107,8 @@ class VestiaireScraper:
                     raw_price = item.get("price", {}).get("amount")
                     currency = item.get("price", {}).get("currency", "USD")
                     parsed_price = Price.fromstring(str(raw_price))
-                    condition = self.gemini_refiner.extract_condition_from_title(title=item.get('description', ''))
-                    size = self.gemini_refiner.extract_size_from_title(title=item.get('description', ''))
+                    condition = self.anthropic_refiner.extract_condition_from_title(title=item.get('description', ''))
+                    size = self.anthropic_refiner.extract_size_from_title(title=item.get('description', ''))
 
                     results.append({
                         "title": f"{item.get('brand', {}).get('name', '')} {item.get('title', '')}".strip(),

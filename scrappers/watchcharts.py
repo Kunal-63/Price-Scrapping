@@ -10,7 +10,7 @@ import asyncio
 import backoff
 from models.product_item import ProductModel
 from price_parser import Price
-from utils.gemini import GeminiRefiner
+from utils.antropic import AnthropicRefiner
 
 
 class WatchChartsScraper:
@@ -25,7 +25,7 @@ class WatchChartsScraper:
         self.scrape_semaphore = asyncio.Semaphore(5)
         self.parse_semaphore = asyncio.Semaphore(20)
         
-        self.gemini_refiner = GeminiRefiner()
+        self.anthropic_refiner = AnthropicRefiner()
 
     @backoff.on_exception(
         backoff.expo,
@@ -96,8 +96,8 @@ class WatchChartsScraper:
                 size_el = anchor.select_one("span.badge-light.font-weight-normal.text-secondary")
                 size = size_el.get_text(strip=True) if size_el else "Not present"
                 if size == "Not present":
-                    size = self.gemini_refiner.extract_size_from_title(title=title)
-                condition = self.gemini_refiner.extract_condition_from_title(title=title)
+                    size = self.anthropic_refiner.extract_size_from_title(title=title)
+                condition = self.anthropic_refiner.extract_condition_from_title(title=title)
 
                 
                 
