@@ -7,15 +7,11 @@ from utils.logger import get_logger
 from bs4 import BeautifulSoup
 from utils.utility import Utility
 from models.product_item import ProductModel
-from models.shoes import ShoesModel
-from models.bags import BagsModel
-from models.accessories import AccessoriesModel
-from models.clothing import ClothingModel
+
 from boto3.session import Session
 from boto3.dynamodb.conditions import Attr
 from config.scrapper_config import Config
-from models.beauty import BeautyModel
-from models.jewelry import JewelryModel
+
 
 class GoogleShoppingScraper:
     def __init__(self, client):

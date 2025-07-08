@@ -8,15 +8,12 @@ from bs4 import BeautifulSoup
 from utils.logger import get_logger
 from utils.utility import Utility
 from models.product_item import ProductModel
-from models.shoes import ShoesModel
-from models.bags import BagsModel
-from models.accessories import AccessoriesModel
-from models.clothing import ClothingModel
+from price_parser import Price
+from utils.gemini import GeminiRefiner
 from boto3.session import Session
 from boto3.dynamodb.conditions import Attr
 from config.scrapper_config import Config
-from models.beauty import BeautyModel
-from models.jewelry import JewelryModel
+
 import backoff
 
 class RealRealScraper:
@@ -35,6 +32,7 @@ class RealRealScraper:
         self.jewelry_table = dynamodb.Table("JewelryTable")
 
         self.semaphore = asyncio.Semaphore(10)
+        self.gemini_refiner = GeminiRefiner()
 
     @backoff.on_exception(
     backoff.expo,
@@ -74,28 +72,42 @@ class RealRealScraper:
         items = soup.select(".product-card-wrapper")
 
         results = []
-        detail_tasks = []
 
         for card in items:
             try:
-                brand = card.select_one(".product-card__brand")
-                name = card.select_one(".product-card__description")
-                price = card.select_one(".product-card__price")
-                image = card.select_one("img.product-card-image__img--one")
-                link = name["href"] if name and name.has_attr("href") else None
+                brand_tag = card.select_one(".product-card__brand")
+                name_tag = card.select_one(".product-card__description")
+                price_tag = card.select_one(".product-card__price")
+                size_tag = card.select_one(".product-card__sizes")
                 condition_tag = card.select_one(".product-card__item-condition")
+                image_tag = card.select_one("img.product-card-image__img--one")
+                link = name_tag["href"] if name_tag and name_tag.has_attr("href") else None
 
-                if not (brand and name and price and link):
+                if not (brand_tag and name_tag and price_tag and link):
                     continue
 
+                brand = brand_tag.text.strip()
+                name = name_tag.text.strip()
+                title = f"{brand} {name}"
+                price_text = price_tag.text.strip()
+                price_data = Price.fromstring(price_text)
+                price = price_data.amount_float if price_data.amount_float else None
+                image_url = image_tag.get("data-src") if image_tag and image_tag.has_attr("data-src") else None
                 full_url = f"https://www.therealreal.com{link}"
+                condition = condition_tag.text.strip() if condition_tag else None
+                size = size_tag.text.strip().replace("Size:", "").strip() if size_tag else None
 
-                base_data = {
-                    "title": f"{brand.text.strip()} {name.text.strip()}",
-                    "listing_price": re.sub(r"[^\d.]", "", price.text.strip()),
+                # Use Gemini fallback if missing
+                condition = condition or self.gemini_refiner.extract_condition_from_title(title=title)
+                size = size or self.gemini_refiner.extract_size_from_title(title=title)
+
+                item = {
+                    "title": title,
+                    "brand": brand,
+                    "listing_price": price,
                     "url": full_url,
-                    "image_url": image.get("data-src") if image and image.has_attr("data-src") else None,
-                    "condition": condition_tag.text.strip() if condition_tag else "Unknown",
+                    "image_url": image_url,
+                    "condition": condition,
                     "seller": "TheRealReal Verified",
                     "shipping": "Varies (via The RealReal)",
                     "location": "US",
@@ -103,80 +115,23 @@ class RealRealScraper:
                     "source": "therealreal",
                     "image_query": image_query,
                     "search_query": search_query,
+                    "product_id": product_id or str(uuid.uuid4()),
+                    "category": category,
+                    "size": size,
                 }
 
-                results.append(base_data)
-                detail_tasks.append(self.get_product_details(full_url))
+                results.append(item)
+                self.insert_or_update_product(item, category)
+                await asyncio.sleep(1)
+
             except Exception as e:
                 self.logger.warning(f"⚠️ Skipping item due to parse error: {e}")
-                detail_tasks.append(asyncio.sleep(0, result={}))
 
-        self.logger.info(f"⏳ Fetching product details sequentially...")
-
-        for item in results:
-            try:
-                detail = await self.get_product_details(item["url"])
-                item["item_details"] = detail if isinstance(detail, dict) else {}
             except Exception as e:
-                self.logger.warning(f"⚠️ Failed to fetch details for {item['url']}: {e}")
-                item["item_details"] = {}
-
-            item["product_id"] = product_id
-            item["category"] = category
-            self.insert_or_update_product(item, category)
-            await asyncio.sleep(1)
+                self.logger.warning(f"⚠️ Skipping item due to parse error: {e}")
 
         self.logger.info(f"✅ The RealReal Results: {len(results)} items found")
         return results
-
-    async def get_product_details(self, product_url):
-        self.logger.info(f"🔍 Fetching product details from The RealReal: {product_url}")
-        try:
-            resp = await self.scrape_with_retries(ScrapeConfig(
-                url=product_url,
-                render_js=True,
-                asp=True,
-                wait_for_selector="div.pdp-main-info",
-                session=Utility.generate_random_session(),
-                country="US",
-                proxy_pool="public_residential_pool",
-                timeout=120000,
-                retry=False
-            ))
-        except Exception as e:
-            self.logger.exception("❌ Failed to fetch product detail page")
-            return {}
-
-        try:
-            html = resp.scrape_result.get("content", "")
-            soup = BeautifulSoup(html, "html.parser")
-
-            description_section = soup.select_one("#pdp-details-Description .pdp-description")
-            description_items = [li.text.strip() for li in description_section.select("li")] if description_section else []
-
-            details = {
-                "description": description_items
-            }
-
-            details_section = soup.select("#pdp-details-Details .product-details-group")
-            for group in details_section:
-                for li in group.select("li"):
-                    key_el = li.select_one("strong")
-                    if key_el:
-                        key = key_el.text.replace(":", "").strip().lower().replace(" ", "_")
-                        value = key_el.next_sibling.strip() if key_el.next_sibling else ""
-                        details[key] = value
-
-            condition_active = soup.select_one(".condition__attribute--active .condition__text")
-            condition_notes = soup.select_one(".condition__details dd")
-            details["condition"] = condition_active.text.strip() if condition_active else ""
-            details["condition_notes"] = condition_notes.text.strip() if condition_notes else ""
-
-            return details
-
-        except Exception as e:
-            self.logger.exception("❌ Failed to parse product detail content")
-            return {}
 
     def insert_or_update_product(self, base_data: dict, category: str):
         existing = self.product_table.scan(
@@ -191,48 +146,3 @@ class RealRealScraper:
             self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
 
         self.product_table.put_item(Item=product.to_dict())
-
-        details = base_data.get("item_details", {})
-        specs = {
-            "Brand": details.get("brand") or details.get("designer"),
-            "Condition": base_data.get("condition", "Unknown"),
-            "Year": details.get("year", "Unknown"),
-            "Size": details.get("size"),
-            "Color": details.get("color"),
-            "Box/Papers": details.get("original box"),
-            "Dust Bag": details.get("dust bag") or details.get("description"),
-            "Strap Drop": details.get("shoulder_strap_drop"),
-            "Handle Drop": details.get("handle_drop"),
-            "Height": details.get("height"),
-            "Width": details.get("width"),
-            "Depth": details.get("depth"),
-            "Gender": details.get("gender"),
-            "Item Code": details.get("item_#"),
-            "Condition Notes": details.get("condition_notes"),
-            "Designer": details.get("designers"),
-            "Title": details.get("title"),
-            "Stone": details.get("stone"),
-            "Metal": details.get("metal"),
-            "Box": details.get("box"),
-        }
-
-        if category == "Shoes":
-            meta = ShoesModel(product.product_id, specs, base_data["url"])
-            self.shoes_table.put_item(Item=meta.to_dict())
-        elif category == "Bags":
-            meta = BagsModel(product.product_id, specs, base_data["url"])
-            self.bags_table.put_item(Item=meta.to_dict())
-        elif category == "Accessories":
-            meta = AccessoriesModel(product.product_id, specs, base_data["url"])
-            self.accessories_table.put_item(Item=meta.to_dict())
-        elif category == "Clothing":
-            meta = ClothingModel(product.product_id, specs, base_data["url"])
-            self.clothing_table.put_item(Item=meta.to_dict())
-        elif category == "Beauty":
-            meta = BeautyModel(product.product_id, specs, base_data["url"])
-            self.beauty_table.put_item(Item=meta.to_dict())
-        elif category == "Jewelry":
-            meta = JewelryModel(product.product_id, specs, base_data["url"])
-            self.jewelry_table.put_item(Item=meta.to_dict())
-        else:
-            self.logger.warning(f"❌ Unknown category: {category}, skipping metadata.")

@@ -8,18 +8,13 @@ from bs4 import BeautifulSoup
 from utils.logger import get_logger
 from utils.utility import Utility
 from models.product_item import ProductModel
-from models.shoes import ShoesModel
-from models.bags import BagsModel
-from models.accessories import AccessoriesModel
-from models.clothing import ClothingModel
 from boto3.session import Session
 from boto3.dynamodb.conditions import Attr
 import datetime
 from config.scrapper_config import Config
-from models.beauty import BeautyModel
-from models.jewelry import JewelryModel
 import backoff
-
+from utils.gemini import GeminiRefiner
+from price_parser import Price
 
 class FashionphileScraper:
     def __init__(self, scrapfly_key):
@@ -36,14 +31,15 @@ class FashionphileScraper:
         self.beauty_table = dynamodb.Table("BeautyTable")
         self.jewelry_table = dynamodb.Table("JewelryTable")
 
-        self.semaphore = asyncio.Semaphore(10) 
+        self.semaphore = asyncio.Semaphore(10)
+        self.gemini_refiner = GeminiRefiner()
 
     @backoff.on_exception(
-    backoff.expo,
-    ScrapflyScrapeError,
-    max_tries=4,
-    giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)  # retry only if it's timeout
-)
+        backoff.expo,
+        ScrapflyScrapeError,
+        max_tries=4,
+        giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)
+    )
     async def scrape_with_retries(self, config):
         self.logger.debug(f"⏳ Scraping URL: {config.url}")
         async with self.semaphore:
@@ -73,7 +69,6 @@ class FashionphileScraper:
         items = soup.find_all("li", class_="ais-Hits-item")
 
         results = []
-        detail_tasks = []
 
         for card in items:
             try:
@@ -82,16 +77,26 @@ class FashionphileScraper:
                 brand_tag = card.find("span", class_="brand")
                 price_tag = card.find("span", itemprop="price")
                 image_tag = link_tag.find("img") if link_tag else None
-                condition_tag = card.find("div", class_="condition-container")
 
                 if not (link_tag and title_tag and brand_tag and price_tag):
                     continue
 
                 title = f"{brand_tag.text.strip()} {title_tag.text.strip()}"
-                price = re.sub(r"[^\d.]", "", price_tag.text.strip())
+                price_text = price_tag.text.strip()
+                price_data = Price.fromstring(price_text)
+                price = price_data.amount_float if price_data.amount_float else None
                 url_full = urljoin("https://www.fashionphile.com", link_tag["href"])
                 image_url = image_tag["src"] if image_tag and image_tag.has_attr("src") else None
-                condition = condition_tag.text.strip() if condition_tag else "Unknown"
+
+                # fetch condition from detail page
+                condition = None
+                cond_tag = card.find("p", class_="condition")
+                if cond_tag and "Condition:" in cond_tag.text:
+                    condition = cond_tag.text.replace("Condition:", "").strip()
+                if not condition:
+                    condition = self.gemini_refiner.extract_condition_from_title(title=title)
+
+                size = self.gemini_refiner.extract_size_from_title(title=title)
 
                 base_data = {
                     "title": title,
@@ -105,71 +110,21 @@ class FashionphileScraper:
                     "top_rated": True,
                     "source": "fashionphile",
                     "image_query": image_query,
-                    "search_query": search_query
+                    "search_query": search_query,
+                    "product_id": product_id,
+                    "category": category,
+                    "size": size
                 }
+
+                self.insert_or_update_product(base_data, category)
                 results.append(base_data)
-                detail_tasks.append(self.get_product_details(url_full))
 
             except Exception as e:
                 self.logger.warning(f"⚠️ Failed to parse a product card: {e}")
-                detail_tasks.append(asyncio.sleep(0, result={}))
-
-        self.logger.info(f"🧵 Fetching item details concurrently for {len(detail_tasks)} products...")
-        detail_results = await asyncio.gather(*detail_tasks, return_exceptions=True)
-
-        for item, detail in zip(results, detail_results):
-            item["item_details"] = detail if isinstance(detail, dict) else {}
-            item["product_id"] = product_id
-            item["category"] = category
-            self.insert_or_update_product(item, category)
+                continue
 
         self.logger.info(f"✅ Fashionphile results fetched: {len(results)}")
         return results
-    
-    async def get_product_details(self, product_url):
-        self.logger.info(f"🔍 Fetching Fashionphile item details: {product_url}")
-        try:
-            resp = await self.scrape_with_retries(ScrapeConfig(
-                url=product_url,
-                render_js=True,
-                asp=True,
-                wait_for_selector="div.accordionPanel",
-                js="""
-                    setTimeout(() => {
-                        document.querySelectorAll('button.pmButton[aria-label="Open"]')
-                          .forEach(btn => btn.click());
-                    }, 1000);
-                """,
-                session=Utility.generate_random_session(),
-                proxy_pool="public_residential_pool",
-                country="US",
-                timeout=120000,
-                retry=False
-            ))
-        except Exception as e:
-            self.logger.exception(f"❌ Failed to fetch item detail page: {e}")
-            return {}
-
-        html = resp.scrape_result.get("content", "")
-        return self.extract_item_details(html)
-
-    def extract_item_details(self, html):
-        soup = BeautifulSoup(html, "html.parser")
-        accordion_panels = soup.find_all("div", class_="accordionPanel")
-        details = {}
-
-        for panel in accordion_panels:
-            for p in panel.find_all("p"):
-                text = p.text.strip()
-                if ":" in text:
-                    key, value = map(str.strip, text.split(":", 1))
-                    details[key.lower()] = value
-                else:
-                    if "description" not in details:
-                        details["description"] = text
-                    else:
-                        details["description"] += f" {text}"
-        return details
 
     def insert_or_update_product(self, base_data: dict, category: str):
         existing = self.product_table.scan(
@@ -184,41 +139,3 @@ class FashionphileScraper:
             self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
 
         self.product_table.put_item(Item=product.to_dict())
-
-        details = base_data.get("item_details", {})
-        specs = {
-            "Brand": details.get("brand") or details.get("designer"),
-            "Condition": base_data.get("condition", "Unknown"),
-            "Year": details.get("year", "Unknown"),
-            "Size": details.get("size"),
-            "Color": details.get("color"),
-            "Box/Papers": details.get("original box"),
-            "Dust Bag": details.get("dust bag") or details.get("description"),
-            "Designer": details.get("designers"),
-            "Title": details.get("title"),
-            "Stone": details.get("stone"),
-            "Metal": details.get("metal"),
-            "Box": details.get("box"),
-            "Gender": details.get("gender")
-        }
-
-        if category == "Shoes":
-            meta = ShoesModel(product.product_id, specs, base_data["url"])
-            self.shoes_table.put_item(Item=meta.to_dict())
-        elif category == "Bags":
-            meta = BagsModel(product.product_id, specs, base_data["url"])
-            self.bags_table.put_item(Item=meta.to_dict())
-        elif category == "Accessories":
-            meta = AccessoriesModel(product.product_id, specs, base_data["url"])
-            self.accessories_table.put_item(Item=meta.to_dict())
-        elif category == "Clothing":
-            meta = ClothingModel(product.product_id, specs, base_data["url"])
-            self.clothing_table.put_item(Item=meta.to_dict())
-        elif category == "Beauty":
-            meta = BeautyModel(product.product_id, specs, base_data["url"])
-            self.beauty_table.put_item(Item=meta.to_dict())
-        elif category == "Jewelry":
-            meta = JewelryModel(product.product_id, specs, base_data["url"])
-            self.jewelry_table.put_item(Item=meta.to_dict())
-        else:
-            self.logger.warning(f"❌ Unknown category: {category}, skipping metadata.")

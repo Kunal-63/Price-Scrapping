@@ -10,14 +10,10 @@ import asyncio
 from boto3.session import Session
 from boto3.dynamodb.conditions import Attr
 from models.product_item import ProductModel
-from models.bags import BagsModel
-from models.shoes import ShoesModel
-from models.accessories import AccessoriesModel
-from models.clothing import ClothingModel
 from config.scrapper_config import Config
-from models.beauty import BeautyModel
-from models.jewelry import JewelryModel
+from price_parser.parser import Price
 import backoff
+from utils.gemini import GeminiRefiner
 
 class RebagScraper:
     def __init__(self, scrapfly_key):
@@ -27,14 +23,9 @@ class RebagScraper:
         session = Session()
         dynamodb = session.resource("dynamodb", region_name="us-east-1")
         self.product_table = dynamodb.Table("ProductsTable")
-        self.bags_table = dynamodb.Table("BagsTable")
-        self.shoes_table = dynamodb.Table("ShoesTable")
-        self.accessories_table = dynamodb.Table("AccessoriesTable")
-        self.clothing_table = dynamodb.Table("ClothingTable")
-        self.beauty_table = dynamodb.Table("BeautyTable")
-        self.jewelry_table = dynamodb.Table("JewelryTable")
-
+        
         self.semaphore = asyncio.Semaphore(10)
+        self.gemini_refiner = GeminiRefiner()
 
     @backoff.on_exception(
     backoff.expo,
@@ -73,96 +64,68 @@ class RebagScraper:
 
         for card in cards:
             try:
-                anchor = card.find("a", class_="plp__card")
-                if not anchor:
+                product_id_val = product_id
+                link_tag = card.select_one("a.plp__card")
+                if not link_tag:
                     continue
+                item_url = link_tag.get("href", "").strip()
 
-                title_el = card.select_one(".products-carousel__card-title")
-                brand_el = card.select_one(".products-carousel__card-designer")
-                price_el = card.select_one(".rewards-plus-plp__product-price-value")
-                image_el = card.select_one(".product-card-image__img, .products-carousel__image-wrapper img")
+                image_tag = card.select_one("img")
+                image_url = image_tag.get("src") if image_tag else None
 
-                title = f"{brand_el.get_text(strip=True)} {title_el.get_text(strip=True)}" if brand_el and title_el else None
-                price = re.sub(r"[^\d.]", "", price_el.get_text(strip=True)) if price_el else None
-                href = anchor["href"] if anchor.has_attr("href") else None
-                image_url = "https:" + image_el["data-src"] if image_el and image_el.has_attr("data-src") else None
+                title_tag = card.select_one(".products-carousel__card-title")
+                title = title_tag.text.strip() if title_tag else "Unknown"
 
-                if not (title and price and href):
-                    continue
+                brand_tag = card.select_one(".products-carousel__card-designer")
+                brand = brand_tag.text.strip() if brand_tag else "Unknown"
 
-                full_url = href if href.startswith("http") else "https://shop.rebag.com" + href
+                details_tag = card.select_one(".products-carousel__card-condition")
+                condition, size, alt_size = "Unknown", "Unknown", None
+                if details_tag:
+                    parts = [p.strip() for p in details_tag.text.split('|')]
+                    if len(parts) > 0: condition = parts[0]
+                    if len(parts) > 1: size = parts[1].replace("Size", "").strip()
+                    if len(parts) > 2: alt_size = parts[2]
 
-                item = {
-                    "title": title,
+                if not condition:
+                    condition = self.gemini_refiner.extract_condition_from_title(title=title)
+
+                if not size:
+                    size = self.gemini_refiner.extract_size_from_title(title=title)
+
+                price_tag = card.select_one(".rewards-plus-plp__product-price-value")
+                price_text = price_tag.text.strip() if price_tag else "$0"
+                price = Price.fromstring(price_text).amount_float or 0.0
+
+                base_data = {
+                    "product_id": product_id or product_id_val,
+                    "title": f"{brand} {title}",
                     "listing_price": price,
-                    "url": full_url,
+                    "url": item_url,
                     "image_url": image_url,
-                    "condition": "Used",
-                    "seller": "Rebag Verified",
-                    "shipping": "Free Shipping in US",
+                    "condition": condition,
+                    "size": size,
+                    "alt_size": alt_size,
+                    "seller": "Rebag",
+                    "shipping": "Varies",
                     "location": "US",
-                    "top_rated": True,
+                    "top_rated": False,
                     "source": "rebag",
-                    "product_id": product_id,
                     "category": category,
                     "image_query": image_query,
                     "search_query": search_query,
+                    "brand": brand
                 }
 
-                detail = await self.get_product_details(full_url)
-                item["item_details"] = detail if isinstance(detail, dict) else {}
-
-                # Insert into DB
-                self.insert_or_update_product(item, category)
-
-                results.append(item)
+                results.append(base_data)
+                self.insert_or_update_product(base_data, category)
 
             except Exception as e:
-                self.logger.warning(f"⚠️ Skipping Rebag item due to error: {e}")
+                self.logger.warning(f"\u26a0\ufe0f Failed to parse product: {e}")
 
-        self.logger.info(f"✅ Rebag results fetched: {len(results)}")
+        self.logger.info(f"\ud83d\udce6 Parsed {len(results)} products from {url}")
         return results
-    
-    async def get_product_details(self, product_url):
-        self.logger.info(f"🔍 Fetching product details from Rebag: {product_url}")
-        try:
-            resp = await self.scrape_with_retries(ScrapeConfig(
-                url=product_url,
-                render_js=True,
-                asp=True,
-                wait_for_selector=".pdp__container",
-                session=Utility.generate_random_session(),
-                retry=False,
-                timeout=120000,
-                country="US"
-            ))
-        except Exception as e:
-            self.logger.exception("❌ Failed to fetch Rebag product detail page")
-            return {}
 
-        try:
-            soup = BeautifulSoup(resp.scrape_result.get("content", ""), "html.parser")
-            details = {}
-
-            # Product details in bullet points
-            bullet_section = soup.select_one(".accordion__body ul")
-            if bullet_section:
-                bullets = [li.get_text(strip=True) for li in bullet_section.select("li")]
-                details["description"] = bullets
-
-            # Extract dimensions or specific attributes if present
-            attr_section = soup.select(".product-attributes__list li")
-            for attr in attr_section:
-                key = attr.select_one(".product-attributes__label")
-                value = attr.select_one(".product-attributes__value")
-                if key and value:
-                    details[key.text.strip().lower().replace(" ", "_")] = value.text.strip()
-
-            return details
-
-        except Exception as e:
-            self.logger.exception("❌ Failed to parse Rebag product detail content")
-            return {}
 
     def insert_or_update_product(self, base_data: dict, category: str):
         existing = self.product_table.scan(
@@ -177,47 +140,3 @@ class RebagScraper:
             self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
 
         self.product_table.put_item(Item=product.to_dict())
-
-        details = base_data.get("item_details", {})
-        specs = {
-            "Brand": details.get("brand") or details.get("designer"),
-            "Condition": base_data.get("condition", "Unknown"),
-            "Size": details.get("size"),
-            "Color": details.get("color"),
-            "Box/Papers": details.get("original box"),
-            "Dust Bag": details.get("dust bag") or details.get("description"),
-            "Strap Drop": details.get("shoulder_strap_drop"),
-            "Handle Drop": details.get("handle_drop"),
-            "Height": details.get("height"),
-            "Width": details.get("width"),
-            "Depth": details.get("depth"),
-            "Gender": details.get("gender"),
-            "Item Code": details.get("item_#"),
-            "Condition Notes": details.get("condition_notes"),
-            "Designer": details.get("designers"),
-            "Title": details.get("title"),
-            "Stone": details.get("stone"),
-            "Metal": details.get("metal"),
-            "Box": details.get("box"),
-        }
-
-        if category == "Shoes":
-            meta = ShoesModel(product.product_id, specs, base_data["url"])
-            self.shoes_table.put_item(Item=meta.to_dict())
-        elif category == "Bags":
-            meta = BagsModel(product.product_id, specs, base_data["url"])
-            self.bags_table.put_item(Item=meta.to_dict())
-        elif category == "Accessories":
-            meta = AccessoriesModel(product.product_id, specs, base_data["url"])
-            self.accessories_table.put_item(Item=meta.to_dict())
-        elif category == "Clothing":
-            meta = ClothingModel(product.product_id, specs, base_data["url"])
-            self.clothing_table.put_item(Item=meta.to_dict())
-        elif category == "Beauty":
-            meta = BeautyModel(product.product_id, specs, base_data["url"])
-            self.beauty_table.put_item(Item=meta.to_dict())
-        elif category == "Jewelry":
-            meta = JewelryModel(product.product_id, specs, base_data["url"])
-            self.jewelry_table.put_item(Item=meta.to_dict())
-        else:
-            self.logger.warning(f"❌ Unknown category: {category}, skipping metadata.")

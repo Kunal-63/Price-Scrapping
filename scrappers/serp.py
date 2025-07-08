@@ -2,19 +2,13 @@ import re
 import json
 import asyncio
 import httpx
-from bs4 import BeautifulSoup
 from config.scrapper_config import Config
 from utils.logger import get_logger
 from utils.utility import Utility
 from boto3.session import Session
 from boto3.dynamodb.conditions import Attr
 from models.product_item import ProductModel
-from models.shoes import ShoesModel
-from models.bags import BagsModel
-from models.accessories import AccessoriesModel
-from models.clothing import ClothingModel
-from models.beauty import BeautyModel
-from models.jewelry import JewelryModel
+from price_parser.parser import Price
 import backoff
 
 
@@ -30,7 +24,7 @@ class SerpAPISearcher:
         self.accessories_table = dynamodb.Table("AccessoriesTable")
         self.clothing_table = dynamodb.Table("ClothingTable")
 
-        self.semaphore = asyncio.Semaphore(10) 
+        self.semaphore = asyncio.Semaphore(10)
 
     @backoff.on_exception(backoff.expo, httpx.HTTPError, max_tries=5)
     async def fetch_with_retries(self, url, params=None, headers=None):
@@ -55,24 +49,26 @@ class SerpAPISearcher:
             products = res.json().get("shopping_results", [])
 
             results = []
-            detail_tasks = []
 
             for p in products:
                 title = p.get("title")
-                price = p.get("price")
+                raw_price = p.get("price")
                 link = p.get("product_link")
                 condition = p.get("condition") or "Unknown"
                 seller = p.get("source") or "Unknown"
                 shipping = p.get("shipping", {}).get("price") if isinstance(p.get("shipping"), dict) else "Not specified"
                 location = p.get("extracted_location") if "extracted_location" in p else "Unknown"
                 image_url = p.get("thumbnail")
+                size = p.get("size", "Unknown")
+                brand = p.get('brand', "Unknown")
+                parsed_price = Price.fromstring(raw_price).amount if raw_price else None
 
-                if not (title and link and price):
+                if not (title and link and raw_price):
                     continue
 
-                results.append({
+                item = {
                     "title": title,
-                    "listing_price": re.sub(r"[^\d.]", "", price),
+                    "listing_price": str(parsed_price),
                     "url": link,
                     "condition": condition,
                     "seller": seller,
@@ -82,18 +78,14 @@ class SerpAPISearcher:
                     "top_rated": False,
                     "source": "google_shopping",
                     "image_query": image_query,
-                    "search_query": search_query
-                })
-                detail_tasks.append(self.get_product_details(link))
+                    "search_query": search_query,
+                    "category": category,
+                    "product_id": product_id,
+                    "size": size,
+                    "brand": brand
+                }
 
-            self.logger.info(f"🧵 Fetching product detail pages concurrently...")
-            detail_results = await asyncio.gather(*detail_tasks, return_exceptions=True)
-
-            for i, detail in enumerate(detail_results):
-                item = results[i]
-                item["item_details"] = detail if isinstance(detail, dict) else {}
-                item["product_id"] = product_id
-                item["category"] = category
+                results.append(item)
                 self.insert_or_update_product(item, category)
 
             self.logger.info(f"✅ Google Shopping results fetched: {len(results)}")
@@ -102,39 +94,6 @@ class SerpAPISearcher:
         except Exception as e:
             self.logger.exception("❌ SerpAPI Shopping request failed")
             return []
-
-    async def get_product_details(self, url):
-        self.logger.info(f"🔍 Fetching product details from Google Shopping URL: {url}")
-        try:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                              "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-            }
-            res = await self.fetch_with_retries(url, headers=headers)
-            soup = BeautifulSoup(res.text, "html.parser")
-
-            description = []
-            details = {}
-
-            for li in soup.select("ul, .product-details, .specs, .a-unordered-list")[:3]:
-                for item in li.select("li"):
-                    text = item.get_text(strip=True)
-                    if text:
-                        description.append(text)
-
-            for row in soup.select("table tr"):
-                cols = row.select("td, th")
-                if len(cols) == 2:
-                    key = cols[0].text.strip().lower().replace(" ", "_").replace(":", "")
-                    val = cols[1].text.strip()
-                    details[key] = val
-
-            details["description"] = description
-            return details
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ Failed to fetch/parse product details from: {url} | {e}")
-            return {}
 
     def insert_or_update_product(self, base_data: dict, category: str):
         existing = self.product_table.scan(
@@ -149,42 +108,3 @@ class SerpAPISearcher:
             self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
 
         self.product_table.put_item(Item=product.to_dict())
-
-        details = base_data.get("item_details", {})
-        specs = {
-            "Brand": base_data.get("seller"),
-            "Condition": base_data.get("condition", "Unknown"),
-            "Year": details.get("year", "Unknown"),
-            "Size": details.get("size") or details.get("product_dimensions"),
-            "Color": details.get("color"),
-            "Shape": details.get("shape"),
-            "Closure": details.get("closure"),
-            "Box/Papers": details.get("box") or details.get("original_box"),
-            "Dust Bag": details.get("description"),
-            "Designer": details.get("designers") or details.get("brand"),
-            "Title": details.get("title"),
-            "Stone": details.get("stone"),
-            "Metal": details.get("metal"),
-            "Box": details.get("box"),
-        }
-
-        if category == "Shoes":
-            meta = ShoesModel(product.product_id, specs, base_data["url"])
-            self.shoes_table.put_item(Item=meta.to_dict())
-        elif category == "Bags":
-            meta = BagsModel(product.product_id, specs, base_data["url"])
-            self.bags_table.put_item(Item=meta.to_dict())
-        elif category == "Accessories":
-            meta = AccessoriesModel(product.product_id, specs, base_data["url"])
-            self.accessories_table.put_item(Item=meta.to_dict())
-        elif category == "Clothing":
-            meta = ClothingModel(product.product_id, specs, base_data["url"])
-            self.clothing_table.put_item(Item=meta.to_dict())
-        elif category == "Beauty":
-            meta = BeautyModel(product.product_id, specs, base_data["url"])
-            self.beauty_table.put_item(Item=meta.to_dict())
-        elif category == "Jewelry":
-            meta = JewelryModel(product.product_id, specs, base_data["url"])
-            self.jewelry_table.put_item(Item=meta.to_dict())
-        else:
-            self.logger.warning(f"❌ Unknown category: {category}, skipping metadata.")

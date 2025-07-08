@@ -1,5 +1,4 @@
 import re
-import json
 from urllib.parse import quote
 from scrapfly import ScrapflyClient, ScrapeConfig, ScrapflyScrapeError
 from bs4 import BeautifulSoup
@@ -7,17 +6,11 @@ from utils.utility import Utility
 from utils.logger import get_logger
 from boto3.session import Session
 from boto3.dynamodb.conditions import Attr
-from concurrent.futures import ThreadPoolExecutor
 import asyncio
 import backoff
 from models.product_item import ProductModel
-from models.bags import BagsModel
-from models.shoes import ShoesModel
-from models.accessories import AccessoriesModel
-from models.clothing import ClothingModel
-from config.scrapper_config import Config
-from models.beauty import BeautyModel
-from models.jewelry import JewelryModel
+from price_parser import Price
+from utils.gemini import GeminiRefiner
 
 
 class WatchChartsScraper:
@@ -28,33 +21,27 @@ class WatchChartsScraper:
         session = Session()
         dynamodb = session.resource("dynamodb", region_name="us-east-1")
         self.product_table = dynamodb.Table("ProductsTable")
-        self.bags_table = dynamodb.Table("BagsTable")
-        self.shoes_table = dynamodb.Table("ShoesTable")
-        self.accessories_table = dynamodb.Table("AccessoriesTable")
-        self.clothing_table = dynamodb.Table("ClothingTable")
-        self.beauty_table = dynamodb.Table("BeautyTable")
-        self.jewelry_table = dynamodb.Table("JewelryTable")
 
-        self.executor = ThreadPoolExecutor(max_workers=5)
-        self.semaphore = asyncio.Semaphore(5) 
-
+        self.scrape_semaphore = asyncio.Semaphore(5)
+        self.parse_semaphore = asyncio.Semaphore(20)
+        
+        self.gemini_refiner = GeminiRefiner()
 
     @backoff.on_exception(
-    backoff.expo,
-    ScrapflyScrapeError,
-    max_tries=4,
-    giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)  # retry only if it's timeout
-)
+        backoff.expo,
+        ScrapflyScrapeError,
+        max_tries=4,
+        giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)
+    )
     async def scrape_with_retries(self, config):
         self.logger.debug(f"⏳ Scraping URL: {config.url}")
-        async with self.semaphore:
+        async with self.scrape_semaphore:
             return await self.client.async_scrape(config)
 
     async def search(self, query, category, product_id, image_query, search_query):
         self.logger.info(f"🔍 Searching WatchCharts for: {query}")
         url = f"https://watchcharts.com/listings?q={quote(query)}"
         results = []
-        detail_tasks = []
 
         try:
             resp = await self.scrape_with_retries(ScrapeConfig(
@@ -71,122 +58,81 @@ class WatchChartsScraper:
             ))
 
             soup = BeautifulSoup(resp.scrape_result["content"], "html.parser")
+            anchors = soup.select("a.card-link[href^='/listing/']")
 
-            for anchor in soup.select("a.card-link[href^='/listing/']"):
-                try:
-                    link = f"https://watchcharts.com{anchor['href']}"
-                    title_el = anchor.select_one(".card-title.card-title-watch")
-                    price_el = anchor.select_one("h4")
-                    image_el = anchor.select_one("img")
-                    meta_el = anchor.select_one("div.font-sm")
+            tasks = [
+                self._process_tile(anchor, category, product_id, image_query, search_query)
+                for anchor in anchors
+            ]
 
-                    title = title_el.get_text(strip=True) if title_el else "Unknown"
-                    price = re.sub(r"[^\d.]", "", price_el.get_text(strip=True)) if price_el else "0"
-                    image_url = image_el["src"] if image_el and image_el.has_attr("src") else None
-                    meta = meta_el.get_text(strip=True) if meta_el else ""
+            parsed_items = await asyncio.gather(*tasks)
+            results = [r for r in parsed_items if r]  # filter None
 
-                    condition = "Used" if "used" in title.lower() else "New" if "new" in title.lower() else "Unknown"
-                    seller_platform = (
-                        "Chrono24" if "chrono24" in meta.lower() else
-                        "WatchUSeek" if "watchuseek" in meta.lower() else
-                        "Reddit" if "reddit" in meta.lower() else
-                        "Forum" if "forum" in meta.lower() else
-                        "Unknown"
-                    )
-
-                    product = {
-                        "title": title,
-                        "listing_price": price,
-                        "product_id": product_id,
-                        "category": category,
-                        "url": link,
-                        "image_url": image_url,
-                        "condition": condition,
-                        "seller": seller_platform,
-                        "shipping": "Varies",
-                        "location": "Unknown",
-                        "top_rated": False,
-                        "source": "watchcharts",
-                        "image_query": image_query,
-                        "search_query": search_query,
-                    }
-
-                    detail_tasks.append(self.fetch_and_insert(product, category))
-                except Exception as e:
-                    self.logger.warning(f"⚠️ Skipping WatchCharts item due to parse error: {e}")
-
-            await asyncio.gather(*detail_tasks)
-
-            self.logger.info(f"✅ WatchCharts results fetched: {len(detail_tasks)}")
-            return detail_tasks
+            self.logger.info(f"✅ WatchCharts results fetched: {len(results)}")
+            return results
 
         except Exception as e:
             self.logger.exception(f"❌ WatchCharts scraping failed: {e}")
             return []
 
-    async def fetch_and_insert(self, base_data, category):
-        details = await self.fetch_item_details(base_data["url"])
-        base_data["item_details"] = details
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(self.executor, self.insert_or_update_product, base_data, category)
+    async def _process_tile(self, anchor, category, product_id, image_query, search_query):
+        async with self.parse_semaphore:
+            try:
+                link = f"https://watchcharts.com{anchor['href']}"
+                title_el = anchor.select_one(".card-title.card-title-watch")
+                price_el = anchor.select_one("h4")
+                image_el = anchor.select_one("img")
+                meta_el = anchor.select_one("div.font-sm")
 
-    async def fetch_item_details(self, url):
-        self.logger.info(f"🔍 Fetching item details from: {url}")
-        try:
-            resp = await self.scrape_with_retries(ScrapeConfig(
-                url=url,
-                asp=True,
-                render_js=True,
-                wait_for_selector=".listing-info",
-                rendering_wait=4000,
-                session=Utility.generate_random_session(),
-                proxy_pool="public_residential_pool",
-                country="US",
-                timeout=120000,
-                retry=False
-            ))
+                title = title_el.get_text(strip=True) if title_el else "Unknown"
+                if price_el:
+                    price_text = price_el.get_text()
+                    price_data = Price.fromstring(price_text)
+                    price_value = price_data.amount_float if price_data.amount_float else None
+                else:
+                    price_value = None
+                image_url = image_el["src"] if image_el and image_el.has_attr("src") else None
+                meta = meta_el.get_text(strip=True) if meta_el else ""
+                size_el = anchor.select_one("span.badge-light.font-weight-normal.text-secondary")
+                size = size_el.get_text(strip=True) if size_el else "Not present"
+                if size == "Not present":
+                    size = self.gemini_refiner.extract_size_from_title(title=title)
+                condition = self.gemini_refiner.extract_condition_from_title(title=title)
 
-            soup = BeautifulSoup(resp.scrape_result["content"], "html.parser")
-            item_details = {}
+                
+                
+                seller_platform = (
+                    "Chrono24" if "chrono24" in meta.lower() else
+                    "WatchUSeek" if "watchuseek" in meta.lower() else
+                    "Reddit" if "reddit" in meta.lower() else
+                    "Forum" if "forum" in meta.lower() else
+                    "Unknown"
+                )
 
-            # Description
-            description_el = soup.select_one(".listing-description-text")
-            item_details = {}
+                base_data = {
+                    "title": title,
+                    "listing_price": price_value,
+                    "product_id": product_id,
+                    "category": category,
+                    "url": link,
+                    "image_url": image_url,
+                    "condition": condition,
+                    "seller": seller_platform,
+                    "shipping": "Varies",
+                    "location": "Unknown",
+                    "top_rated": False,
+                    "source": "watchcharts",
+                    "image_query": image_query,
+                    "search_query": search_query,
+                    'size': size,
+                }
 
-            if description_el:
-                # Replace <br> with newlines and extract text
-                raw_html = str(description_el)
-                for br in description_el.find_all("br"):
-                    br.replace_with("\n")
-                full_text = description_el.get_text(separator="\n", strip=True)
+                await asyncio.to_thread(self.insert_or_update_product, base_data, category)
+                return base_data
 
-                # Add entire description
-                item_details["description"] = full_text
-
-                # Extract item specifications as key-value pairs
-                item_specifications = {}
-                for line in full_text.split("\n"):
-                    if ":" in line:
-                        parts = line.split(":", 1)
-                        key = parts[0].strip().lower().replace(" ", "_")
-                        value = parts[1].strip()
-                        item_specifications[key] = value
-
-                item_details["item_specifications"] = item_specifications
-
-            # Key-value table
-            for row in soup.select(".table.table-bordered tr"):
-                cols = row.find_all("td")
-                if len(cols) == 2:
-                    key = cols[0].get_text(strip=True).lower().replace(" ", "_").replace(":", "")
-                    value = cols[1].get_text(strip=True)
-                    item_details[key] = value
-
-            return item_details
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ Failed to fetch item details from {url}: {e}")
-            return {}
+            except Exception as e:
+                self.logger.warning(f"⚠️ Skipping WatchCharts item due to parse error: {e}")
+                return None
 
     def insert_or_update_product(self, base_data: dict, category: str):
         existing = self.product_table.scan(
@@ -201,49 +147,3 @@ class WatchChartsScraper:
             self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
 
         self.product_table.put_item(Item=product.to_dict())
-
-        details = base_data.get("item_details", {})
-        specs_data = details.get("item_specifications", {})  # Extract from parsed description text
-
-        specs = {
-            "Brand": details.get("brand") or details.get("designer") or specs_data.get("brand"),
-            "Model": specs_data.get("model"),
-            "Condition": base_data.get("condition", "Unknown"),
-            "Size": details.get("size") or specs_data.get("size"),
-            "Color": details.get("color") or specs_data.get("color"),
-            "Box/Papers": details.get("material") or specs_data.get("box/papers"),
-            "Movement": specs_data.get("movement"),
-            "Water Resistance": specs_data.get("water_resistance"),
-            "Case Material": specs_data.get("case_material"),
-            "Luminous": specs_data.get("luminous"),
-            "Year": details.get("year", "Unknown") or specs_data.get("year"),
-            "Dust Bag": details.get("dust bag") or specs_data.get("dust_bag") or details.get("description"),
-            "Gender": details.get("gender"),
-            "Designer": details.get("designers") or details.get("brand") or specs_data.get("designer"),
-            "Title": details.get("title") or specs_data.get("title"),
-            "Stone": details.get("stone") or specs_data.get("stone"),
-            "Metal": details.get("metal") or specs_data.get("metal"),
-            "Box": details.get("box") or specs_data.get("box"),
-        }
-
-        # Save into the corresponding category table
-        if category == "Shoes":
-            meta = ShoesModel(product.product_id, specs, base_data["url"])
-            self.shoes_table.put_item(Item=meta.to_dict())
-        elif category == "Bags":
-            meta = BagsModel(product.product_id, specs, base_data["url"])
-            self.bags_table.put_item(Item=meta.to_dict())
-        elif category == "Accessories":
-            meta = AccessoriesModel(product.product_id, specs, base_data["url"])
-            self.accessories_table.put_item(Item=meta.to_dict())
-        elif category == "Clothing":
-            meta = ClothingModel(product.product_id, specs, base_data["url"])
-            self.clothing_table.put_item(Item=meta.to_dict())
-        elif category == "Beauty":
-            meta = BeautyModel(product.product_id, specs, base_data["url"])
-            self.beauty_table.put_item(Item=meta.to_dict())
-        elif category == "Jewelry":
-            meta = JewelryModel(product.product_id, specs, base_data["url"])
-            self.jewelry_table.put_item(Item=meta.to_dict())
-        else:
-            self.logger.warning(f"❌ Unknown category: {category}, skipping metadata.")

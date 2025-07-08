@@ -7,17 +7,8 @@ from utils.product_engine import ProductSearchEngine
 
 session = Session()
 dynamodb = session.resource("dynamodb", region_name="us-east-1")
-table_name = "LuxuryProductsTable"
+table_name = "FinalProductsTable"
 table = dynamodb.Table(table_name)
-
-category_mapping = {
-    "shoes": "Shoes",
-    "bags": "Bags",
-    "accessories": "Accessories",
-    "clothing": "Clothing",
-    "beauty": "Beauty",
-    "jewelry": "Jewelry"
-}
 
 async def process_all_items():
     search_engine = ProductSearchEngine()
@@ -37,12 +28,11 @@ async def process_all_items():
 
         # Run ProductSearchEngine for each item
         for item in items:
-            query = item.get("product_name")
+            query = item.get("canonical_name")
             category = item.get("category")
-            modified_category = category_mapping.get(category.lower(), "Unknown")
             product_id = item.get("product_id")
 
-            imageurls = item.get('s3_image_urls', [])
+            imageurls = item.get('all_image_urls', [])
             image = None
             if imageurls:
                 image = imageurls[0]
@@ -50,7 +40,7 @@ async def process_all_items():
             result = await search_engine.search(
                 query=query,
                 image_url=image,
-                category=modified_category,
+                category=category,
                 product_id=product_id
             )
 

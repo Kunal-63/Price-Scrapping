@@ -123,3 +123,60 @@ class GeminiRefiner:
         except requests.exceptions.RequestException as e:
             print(f"❌ Error using Gemini API: {e}")
             return product_query
+        
+    def extract_size_from_title(self, title: str) -> str:
+        if not title:
+            return "Not present"
+
+        prompt = (
+            "You are an intelligent product metadata extractor. "
+            "Given a product title, extract the size from it, if any. "
+            "Size can be for clothing (e.g., M, L, XL), shoes (e.g., 9 US), electronics (e.g., 128 GB), or other formats (e.g., 10.5 inch). "
+            "If no size is mentioned, respond with 'Not present'.\n\n"
+            f"Product title: {title}\n\n"
+            "❗Only return the extracted size value or 'Not present'. Do not include units if not explicitly mentioned."
+        )
+
+        try:
+            response = requests.post(
+                self.api_url,
+                headers={"Content-Type": "application/json"},
+                params={"key": self.api_key},
+                json={"contents": [{"parts": [{"text": prompt}]}]},
+                timeout=10
+            )
+            response.raise_for_status()
+            data = response.json()
+            parts = data.get("candidates", [])[0].get("content", {}).get("parts", [])
+            return parts[0].get("text", "Not present").strip() if parts else "Not present"
+        except Exception as e:
+            print(f"❌ Gemini size extraction error: {e}")
+            return "Not present"
+        
+    def extract_condition_from_title(self, title: str) -> str:
+        if not title:
+            return "Unknown"
+
+        prompt = (
+            "You are an intelligent product metadata extractor. "
+            "Given a product title, extract the condition of the product from it. "
+            "Only return one of the following: 'New', 'Used', 'Pre-owned', 'Vintage', 'Open box', or 'Unknown'.\n\n"
+            f"Product title: {title}\n\n"
+            "❗Only return the condition category. Do not explain or return anything else."
+        )
+
+        try:
+            response = requests.post(
+                self.api_url,
+                headers={"Content-Type": "application/json"},
+                params={"key": self.api_key},
+                json={"contents": [{"parts": [{"text": prompt}]}]},
+                timeout=10
+            )
+            response.raise_for_status()
+            data = response.json()
+            parts = data.get("candidates", [])[0].get("content", {}).get("parts", [])
+            return parts[0].get("text", "Unknown").strip().capitalize() if parts else "Unknown"
+        except Exception as e:
+            print(f"❌ Gemini condition extraction error: {e}")
+            return "Unknown"
