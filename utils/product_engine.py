@@ -75,15 +75,12 @@ class ProductSearchEngine:
         if not final_query:
             logger.error("No valid query generated.")
             return
-        
-        if final_query and image_query:
-            final_query = self.query_refiner.refine_query_with_image(product_query=final_query, image_keywords=image_query)
 
         logger.info(f"Final Search Query: {final_query}")
 
         async def fetch(scraper, name):
             try:
-                result = await scraper.search(final_query, category, product_id, image_query, final_query)
+                result = await scraper.search(query, category, product_id, image_query, final_query)
                 if isinstance(result, dict) and "active" in result:
                     logger.info(f"{name} Results: {len(result['active'])} active, {len(result['sold'])} sold")
                 else:

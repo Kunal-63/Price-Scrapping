@@ -1,11 +1,12 @@
 from datetime import datetime
+from decimal import Decimal
 import uuid
 
 class ProductModel:
     def __init__(self, base_data: dict, category: str):
         self.product_id = base_data.get("product_id", str(uuid.uuid4()))
         self.title = base_data.get("title", "")
-        self.listing_price = float(base_data.get("listing_price", 0))
+        self.listing_price = Decimal(str(base_data.get("listing_price", 0)))
         self.currency = base_data.get("currency", 'USD')
         self.url = base_data.get("url", "")
         self.condition = base_data.get("condition", "Unknown")

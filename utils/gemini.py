@@ -2,11 +2,27 @@ import os
 import requests
 from urllib.parse import urlparse
 from config.scrapper_config import Config
+import backoff
+from functools import lru_cache
 
 class GeminiRefiner:
     def __init__(self):
         self.api_key = Config.GEMINI_API_KEY
         self.api_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+
+    @backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=5)
+    def call_gemini_api(self, prompt, api_url, api_key):
+        response = requests.post(
+            api_url,
+            headers={"Content-Type": "application/json"},
+            params={"key": api_key},
+            json={"contents": [{"parts": [{"text": prompt}]}]},
+            timeout=10
+        )
+        response.raise_for_status()
+        data = response.json()
+        parts = data.get("candidates", [])[0].get("content", {}).get("parts", [])
+        return parts[0].get("text", "").strip() if parts else ""
 
     def refine_query(self, base_query, image_url=None):
         if not base_query:
@@ -124,6 +140,7 @@ class GeminiRefiner:
             print(f"❌ Error using Gemini API: {e}")
             return product_query
         
+    @lru_cache(maxsize=5000)
     def extract_size_from_title(self, title: str) -> str:
         if not title:
             return "Not present"
@@ -138,21 +155,13 @@ class GeminiRefiner:
         )
 
         try:
-            response = requests.post(
-                self.api_url,
-                headers={"Content-Type": "application/json"},
-                params={"key": self.api_key},
-                json={"contents": [{"parts": [{"text": prompt}]}]},
-                timeout=10
-            )
-            response.raise_for_status()
-            data = response.json()
-            parts = data.get("candidates", [])[0].get("content", {}).get("parts", [])
-            return parts[0].get("text", "Not present").strip() if parts else "Not present"
+            result = self.call_gemini_api(prompt, self.api_url, self.api_key)
+            return result or "Not present"
         except Exception as e:
             print(f"❌ Gemini size extraction error: {e}")
             return "Not present"
         
+    @lru_cache(maxsize=5000)
     def extract_condition_from_title(self, title: str) -> str:
         if not title:
             return "Unknown"
@@ -166,17 +175,8 @@ class GeminiRefiner:
         )
 
         try:
-            response = requests.post(
-                self.api_url,
-                headers={"Content-Type": "application/json"},
-                params={"key": self.api_key},
-                json={"contents": [{"parts": [{"text": prompt}]}]},
-                timeout=10
-            )
-            response.raise_for_status()
-            data = response.json()
-            parts = data.get("candidates", [])[0].get("content", {}).get("parts", [])
-            return parts[0].get("text", "Unknown").strip().capitalize() if parts else "Unknown"
+            result = self.call_gemini_api(prompt, self.api_url, self.api_key)
+            return result.capitalize() if result else "Unknown"
         except Exception as e:
             print(f"❌ Gemini condition extraction error: {e}")
             return "Unknown"
