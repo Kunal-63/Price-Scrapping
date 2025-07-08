@@ -75,6 +75,8 @@ class EbayScraper:
 
             soup = BeautifulSoup(resp.scrape_result["content"], "html.parser")
             items = soup.select(".s-item")
+            if not items:
+                break
             for item in items:
                 tasks.append(self._parse_item(item, sem, product_id, image_query, search_query, category, listings))
 

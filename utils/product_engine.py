@@ -53,28 +53,28 @@ class ProductSearchEngine:
         image_query = None
         combined_query = None
 
-        if image_url:
-            if not image_url.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-                logger.error("Unsupported image format.")
-                return
+        # if image_url:
+        #     if not image_url.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+        #         logger.error("Unsupported image format.")
+        #         return
 
-            logger.info("Extracting product name from image...")
-            base_name = self.image_searcher.reverse_image_search(image_url)
-            if not base_name:
-                logger.error("Unable to determine product name from image.")
-                return
+        #     logger.info("Extracting product name from image...")
+        #     base_name = self.image_searcher.reverse_image_search(image_url)
+        #     if not base_name:
+        #         logger.error("Unable to determine product name from image.")
+        #         return
 
-            logger.info("Refining query using Gemini (from image)...")
-            final_query = self.query_refiner.refine_query(base_name, image_url)
-            image_query = final_query
+        #     logger.info("Refining query using Gemini (from image)...")
+        #     final_query = self.query_refiner.refine_query(base_name, image_url)
+        #     image_query = final_query
 
-        elif query:
-            logger.info("Refining query using Gemini (from text query)...")
-            final_query = query.strip()
+        # elif query:
+        #     logger.info("Refining query using Gemini (from text query)...")
+        #     final_query = query.strip()
 
-        if not final_query:
-            logger.error("No valid query generated.")
-            return
+        # if not final_query:
+        #     logger.error("No valid query generated.")
+        #     return
 
         logger.info(f"Final Search Query: {final_query}")
 
@@ -90,39 +90,35 @@ class ProductSearchEngine:
                 logger.error(f"Error fetching from {name}: {e}")
                 return {"active": [], "sold": []} if name == "eBay" else []
 
-        results = await asyncio.gather(
-            fetch(self.ebay_scraper, "eBay"),
-            fetch(self.stockx_scraper, "StockX"),
-            # fetch(self.goat_scraper, "Goat"),
-            # fetch(self.flightclub, "Flight Club"),
-            fetch(self.watchcharts, "WatchCharts"),
-            fetch(self.chrono24, "Chrono24"),
-            fetch(self.fashionphile, "Fashionphile"),
-            fetch(self.realreal, "The RealReal"),
-            fetch(self.rebag, "Rebag"),
-            fetch(self.vestiaire, "Vestiaire"),
-            fetch(self.grailed, "Grailed"),
-            fetch(self.farfetch, "Farfetch"),
-            fetch(self.serpapi_searcher, "Google Shopping")
-        )
+        tasks = [
+            ("ebay_results", fetch(self.ebay_scraper, "eBay")),
+            ("stockx_results", fetch(self.stockx_scraper, "StockX")),
+            # ("goat_results", fetch(self.goat_scraper, "Goat")),
+            # ("flightclub_results", fetch(self.flightclub, "Flight Club")),
+            ("fashionphile_results", fetch(self.fashionphile, "Fashionphile")),
+            ("realreal_results", fetch(self.realreal, "The RealReal")),
+            ("rebag_results", fetch(self.rebag, "Rebag")),
+            ("vestiaire_results", fetch(self.vestiaire, "Vestiaire")),
+            ("grailed_results", fetch(self.grailed, "Grailed")),
+            ("farfetch_results", fetch(self.farfetch, "Farfetch")),
+            ("google_shopping_results", fetch(self.serpapi_searcher, "Google Shopping")),
+        ]
+
+        if category == 'watches':
+            tasks.extend([
+                ("watchcharts_results", fetch(self.watchcharts, "WatchCharts")),
+                ("chrono24_results", fetch(self.chrono24, "Chrono24")),
+            ])
+
+        names, coroutines = zip(*tasks)
+
+        results = await asyncio.gather(*coroutines)
 
         combined = {
             "query": final_query,
-            # "testing": results[0],
-            "ebay_results": results[0],
-            "stockx_results": results[1],
-            # "goat_results": results[2],
-            # "flightclub_results": results[3],
-            "watchcharts_results": results[2],
-            "chrono24_results": results[3],
-            "fashionphile_results": results[4],
-            "realreal_results": results[5],
-            "rebag_results": results[6],
-            "vestiaire_results": results[7],
-            "grailed_results": results[8],
-            "farfetch_results": results[9],
-            "google_shopping_results": results[10]
+            **dict(zip(names, results))
         }
+
 
         logger.info("Final Combined Results prepared.")
         return combined
