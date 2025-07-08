@@ -1,4 +1,5 @@
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from scrapfly import ScrapflyClient, ScrapeConfig, ScrapflyScrapeError
 from bs4 import BeautifulSoup
 from urllib.parse import quote
@@ -19,6 +20,7 @@ class EbayScraper:
         self.client = ScrapflyClient(key=scrapfly_key)
         self.logger = get_logger()
         self.MAX_CONCURRENT_DETAIL_FETCHES = 20
+        self.executor = ThreadPoolExecutor(max_workers=10)
 
         session = Session()
         dynamodb = session.resource("dynamodb", region_name="us-east-1")
@@ -171,20 +173,28 @@ class EbayScraper:
                 }
 
                 listings.append(base_data)
-                self.insert_or_update_product(base_data, category)
+                await asyncio.get_event_loop().run_in_executor(
+                    self.executor,
+                    self.insert_or_update_product,
+                    base_data,
+                    category
+                )
             except Exception as e:
                 self.logger.exception(f"❌ Error parsing item: {e}")
 
     def insert_or_update_product(self, base_data: dict, category: str):
-        existing = self.product_table.scan(
-            FilterExpression=Attr("url").eq(base_data["url"])
-        )
+        try:
+            # Efficient lookup if URL is primary key or part of a GSI
+            response = self.product_table.get_item(Key={"url": base_data["url"]})
+            exists = "Item" in response
 
-        product = ProductModel(base_data, category)
+            product = ProductModel(base_data, category)
 
-        if existing["Items"]:
-            self.logger.info(f"🔄 Updating existing product in DB: {base_data['url']}")
-        else:
-            self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
+            if exists:
+                self.logger.info(f"🔄 Updating existing product in DB: {base_data['url']}")
+            else:
+                self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
 
-        self.product_table.put_item(Item=product.to_dict())
+            self.product_table.put_item(Item=product.to_dict())
+        except Exception as e:
+            self.logger.exception(f"❌ Error inserting/updating product: {e}")
