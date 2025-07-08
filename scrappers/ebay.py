@@ -63,7 +63,7 @@ class EbayScraper:
         scrape_configs = [
             ScrapeConfig(
                 url=url,
-                render_js=False,
+                render_js=True,
                 asp=True,
                 wait_for_selector=".s-item__title",
                 session=Utility.generate_random_session(),
