@@ -16,15 +16,9 @@ from utils.antropic import AnthropicRefiner
 class SerpAPISearcher:
     def __init__(self):
         self.logger = get_logger()
-
         session = Session()
         dynamodb = session.resource("dynamodb", region_name="us-east-1")
         self.product_table = dynamodb.Table("ProductsTable")
-        self.shoes_table = dynamodb.Table("ShoesTable")
-        self.bags_table = dynamodb.Table("BagsTable")
-        self.accessories_table = dynamodb.Table("AccessoriesTable")
-        self.clothing_table = dynamodb.Table("ClothingTable")
-
         self.semaphore = asyncio.Semaphore(10)
         self.anthropic_refiner = AnthropicRefiner()
 
@@ -49,8 +43,8 @@ class SerpAPISearcher:
         try:
             res = await self.fetch_with_retries("https://serpapi.com/search.json", params=params)
             products = res.json().get("shopping_results", [])
-
             results = []
+            tasks = []
 
             for p in products:
                 title = p.get("title")
@@ -58,23 +52,29 @@ class SerpAPISearcher:
                 link = p.get("product_link")
                 condition = p.get("condition") or "Unknown"
                 seller = p.get("source") or "Unknown"
-                shipping = p.get("shipping", {}).get("price") if isinstance(p.get("shipping"), dict) else "Not specified"
-                location = p.get("extracted_location") if "extracted_location" in p else "Unknown"
+                shipping = (
+                    p.get("shipping", {}).get("price") if isinstance(p.get("shipping"), dict)
+                    else "Not specified"
+                )
+                location = p.get("extracted_location", "Unknown")
                 image_url = p.get("thumbnail")
                 size = p.get("size", "Unknown")
-                brand = p.get('brand', "Unknown")
-                parsed_price = Price.fromstring(raw_price).amount if raw_price else None
+                brand = p.get("brand", "Unknown")
 
                 if not (title and link and raw_price):
                     continue
-                
+
+                parsed_price = Price.fromstring(raw_price)
+                price = parsed_price.amount_float if parsed_price and parsed_price.amount_float else None
+
+                # Refine location
                 location = self.anthropic_refiner.extract_location_from_title(title=title)
 
                 item = {
                     "title": title,
-                    "listing_price": str(parsed_price),
+                    "listing_price": str(price) if price else None,
                     "url": link,
-                    "condition": condition,
+                    "condition": condition.capitalize(),
                     "seller": seller,
                     "shipping": shipping,
                     "location": location,
@@ -90,17 +90,20 @@ class SerpAPISearcher:
                 }
 
                 results.append(item)
-                self.insert_or_update_product(item, category)
+                tasks.append(asyncio.create_task(self.insert_or_update_product(item, category)))
 
-            self.logger.info(f"✅ Google Shopping results fetched: {len(results)}")
+            await asyncio.gather(*tasks)
+            self.logger.info(f"✅ Google Shopping results fetched and inserted: {len(results)}")
             return results
 
         except Exception as e:
             self.logger.exception("❌ SerpAPI Shopping request failed")
             return []
 
-    def insert_or_update_product(self, base_data: dict, category: str):
-        product = ProductModel(base_data, category)
-        self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
-
-        self.product_table.put_item(Item=product.to_dict())
+    async def insert_or_update_product(self, base_data: dict, category: str):
+        try:
+            product = ProductModel(base_data, category)
+            self.logger.debug(f"🛒 Inserting product: {base_data['url']}")
+            await asyncio.to_thread(self.product_table.put_item, Item=product.to_dict())
+        except Exception as e:
+            self.logger.exception(f"❌ Failed to insert product into DynamoDB: {e}")
