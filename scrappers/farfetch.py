@@ -130,15 +130,7 @@ class FarfetchScraper:
         return results
 
     def insert_or_update_product(self, base_data: dict, category: str):
-        existing = self.product_table.scan(
-            FilterExpression=Attr("url").eq(base_data["url"])
-        )
-
         product = ProductModel(base_data, category)
-
-        if existing["Items"]:
-            self.logger.info(f"🔄 Updating existing product in DB: {base_data['url']}")
-        else:
-            self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
+        self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
 
         self.product_table.put_item(Item=product.to_dict())

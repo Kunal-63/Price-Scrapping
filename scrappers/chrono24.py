@@ -154,13 +154,8 @@ class Chrono24Scraper:
 
     def insert_or_update_product(self, base_data: dict, category: str):
         try:
-            existing = self.product_table.get_item(Key={"url": base_data["url"]})
             product = ProductModel(base_data, category)
-
-            if "Item" in existing:
-                self.logger.info(f"\ud83d\udd04 Updating existing product: {base_data['url']}")
-            else:
-                self.logger.info(f"\u2795 Inserting new product: {base_data['url']}")
+            self.logger.info(f"\ud83d\udd04 Inserting existing product: {base_data['url']}")
 
             self.product_table.put_item(Item=product.to_dict())
         except Exception as e:

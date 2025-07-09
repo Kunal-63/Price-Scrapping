@@ -186,16 +186,8 @@ class EbayScraper:
 
     def insert_or_update_product(self, base_data: dict, category: str):
         try:
-            # Efficient lookup if URL is primary key or part of a GSI
-            response = self.product_table.get_item(Key={"url": base_data["url"]})
-            exists = "Item" in response
-
             product = ProductModel(base_data, category)
-
-            if exists:
-                self.logger.info(f"🔄 Updating existing product in DB: {base_data['url']}")
-            else:
-                self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
+            self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
 
             self.product_table.put_item(Item=product.to_dict())
         except Exception as e:

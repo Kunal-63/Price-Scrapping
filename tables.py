@@ -22,6 +22,28 @@ def create_table_if_not_exists(dynamodb, table_name, key_name, key_type='S'):
                 {
                     'AttributeName': key_name,
                     'AttributeType': key_type
+                },
+                {
+                    'AttributeName': 'product_id',
+                    'AttributeType': 'S'
+                }
+            ],
+            GlobalSecondaryIndexes=[
+                {
+                    'IndexName': 'ProductIdIndex',
+                    'KeySchema': [
+                        {
+                            'AttributeName': 'product_id',
+                            'KeyType': 'HASH'
+                        }
+                    ],
+                    'Projection': {
+                        'ProjectionType': 'ALL'
+                    },
+                    'ProvisionedThroughput': {
+                        'ReadCapacityUnits': 5,
+                        'WriteCapacityUnits': 5
+                    }
                 }
             ],
             ProvisionedThroughput={
@@ -29,21 +51,16 @@ def create_table_if_not_exists(dynamodb, table_name, key_name, key_type='S'):
                 'WriteCapacityUnits': 5
             }
         )
+
         table.meta.client.get_waiter('table_exists').wait(TableName=table_name)
         print(f"✅ Table created: {table_name}")
+
     except ClientError as e:
         print(f"❌ Error creating table {table_name}: {e}")
 
 if __name__ == "__main__":
-    # Use AWS SSO profile
-    session = Session()
+    session = Session(profile_name='auricore-dev-kunal')
     dynamodb = session.resource("dynamodb", region_name="us-east-1")
 
-    # Product and metadata tables
+    # Create table with product_id as GSI
     create_table_if_not_exists(dynamodb, "ProductsTable", "url")
-    create_table_if_not_exists(dynamodb, "ShoesTable", "url")
-    create_table_if_not_exists(dynamodb, "BagsTable", "url")
-    create_table_if_not_exists(dynamodb, "AccessoriesTable", "url")
-    create_table_if_not_exists(dynamodb, "ClothingTable", "url")
-    create_table_if_not_exists(dynamodb, "BeautyTable", "url")
-    create_table_if_not_exists(dynamodb, "JewelryTable", "url")
