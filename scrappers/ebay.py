@@ -20,7 +20,7 @@ class EbayScraper:
         self.client = ScrapflyClient(key=scrapfly_key)
         self.logger = get_logger()
         self.MAX_CONCURRENT_DETAIL_FETCHES = 20
-        self.executor = ThreadPoolExecutor(max_workers=10)
+        self.executor = ThreadPoolExecutor(max_workers=20)
 
         session = Session()
         dynamodb = session.resource("dynamodb", region_name="us-east-1")
@@ -215,7 +215,7 @@ class EbayScraper:
                 with self.product_table.batch_writer(overwrite_by_pkeys=["url"]) as writer:
                     for item in batch:
                         writer.put_item(Item=item)
-                self.logger.info(f"✅ Inserted batch of {len(batch)} items.")
+                self.logger.info(f"✅ Inserted batch of {len(batch)} items. EBAY")
             except Exception as e:
                 self.logger.exception(f"❌ Batch insert failed: {e}")
 

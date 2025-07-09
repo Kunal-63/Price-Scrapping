@@ -167,6 +167,6 @@ class RebagScraper:
                 for item in items:
                     product = ProductModel(item, category)
                     batch.put_item(Item=product.to_dict())
-            self.logger.info(f"✅ Inserted {len(items)} items in batch.")
+            self.logger.info(f"✅ Inserted {len(items)} items in batch. REBAG")
         except Exception as e:
             self.logger.exception(f"❌ Batch insert failed: {e}")

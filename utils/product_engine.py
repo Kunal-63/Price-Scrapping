@@ -81,7 +81,7 @@ class ProductSearchEngine:
 
         async def fetch(scraper, name):
             try:
-                result = await scraper.search(final_query, category, product_id, image_query, final_query)
+                result = await scraper.search(query, category, product_id, image_query, final_query)
                 if isinstance(result, dict) and "active" in result:
                     logger.info(f"{name} Results: {len(result['active'])} active, {len(result['sold'])} sold")
                 else:
@@ -104,7 +104,8 @@ class ProductSearchEngine:
             fetch(self.vestiaire, "Vestiaire"),
             fetch(self.grailed, "Grailed"),
             fetch(self.farfetch, "Farfetch"),
-            fetch(self.serpapi_searcher, "Google Shopping")
+            fetch(self.serpapi_searcher, "Google Shopping"),
+            return_exceptions=True
         )
 
         combined = {

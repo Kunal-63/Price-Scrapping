@@ -103,7 +103,7 @@ class StockXScraper:
 
             await asyncio.to_thread(self.bulk_insert_products, results, category)
 
-            self.logger.info(f"✅ StockX results fetched: {len(results)}")
+            self.logger.info(f"✅ StockX results fetched: {len(results)} STOCKX")
             return results
 
         except Exception as e:

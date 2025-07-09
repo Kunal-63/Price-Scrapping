@@ -172,3 +172,4 @@ class RealRealScraper:
             for item in items:
                 product = ProductModel(item, category)
                 batch.put_item(Item=product.to_dict())
+        self.logger.info(f"✅ Inserted batch of {len(items)} items. REALREAL")  

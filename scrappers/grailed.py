@@ -25,7 +25,7 @@ class GrailedScraper:
         self.product_table = dynamodb.Table("ProductsTable")
         self.semaphore = asyncio.Semaphore(10)
         self.anthropic_refiner = AnthropicRefiner()
-        self.executor = ThreadPoolExecutor(max_workers=8)
+        self.executor = ThreadPoolExecutor(max_workers=20)
 
     @backoff.on_exception(
         backoff.expo,
@@ -171,7 +171,7 @@ class GrailedScraper:
                 with self.product_table.batch_writer(overwrite_by_pkeys=["url"]) as writer:
                     for item in batch:
                         writer.put_item(Item=item)
-                self.logger.info(f"✅ Inserted batch of {len(batch)} items.")
+                self.logger.info(f"✅ Inserted batch of {len(batch)} items. GRAILED")
             except Exception as e:
                 self.logger.exception(f"❌ Batch insert failed: {e}")
 

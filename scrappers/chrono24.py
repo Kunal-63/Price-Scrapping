@@ -174,7 +174,7 @@ class Chrono24Scraper:
                     for item in batch:
                         writer.put_item(Item=item)
                         self.logger.info(f"Inserting... {item}")
-                self.logger.info(f"✅ Inserted batch of {len(batch)} items.")
+                self.logger.info(f"✅ Inserted batch of {len(batch)} items. CHRONO")
             except Exception as e:
                 self.logger.exception(f"❌ Batch insert failed: {e}")
 

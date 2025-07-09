@@ -99,7 +99,7 @@ class SerpAPISearcher:
                 tasks.append(asyncio.create_task(self.insert_or_update_product(item, category)))
 
             await asyncio.gather(*tasks)
-            self.logger.info(f"✅ Google Shopping results fetched and inserted: {len(results)}")
+            self.logger.info(f"✅ Google Shopping results fetched and inserted: {len(results)} SERP")
             return results
 
         except Exception as e:
@@ -109,7 +109,6 @@ class SerpAPISearcher:
     async def insert_or_update_product(self, base_data: dict, category: str):
         try:
             product = ProductModel(base_data, category)
-            self.logger.debug(f"🛒 Inserting product: {base_data['url']}")
             await asyncio.to_thread(self.product_table.put_item, Item=product.to_dict())
         except Exception as e:
             self.logger.exception(f"❌ Failed to insert product into DynamoDB: {e}")

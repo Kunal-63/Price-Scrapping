@@ -8,7 +8,7 @@ session = Session()
 dynamodb = session.resource("dynamodb", region_name="us-east-1")
 table = dynamodb.Table("FinalProductsTable")
 
-CONCURRENCY = 10  # max concurrent product searches
+CONCURRENCY = 3  # max concurrent product searches
 BATCH_SIZE = 25   # number of items to scan per DynamoDB read
 
 

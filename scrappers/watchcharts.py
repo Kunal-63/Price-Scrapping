@@ -11,6 +11,7 @@ import backoff
 from models.product_item import ProductModel
 from price_parser import Price
 from utils.antropic import AnthropicRefiner
+from concurrent.futures import ThreadPoolExecutor
 
 
 class WatchChartsScraper:
@@ -24,6 +25,7 @@ class WatchChartsScraper:
 
         self.scrape_semaphore = asyncio.Semaphore(5)
         self.parse_semaphore = asyncio.Semaphore(20)
+        self.executor = ThreadPoolExecutor(max_workers=10)
         
         self.anthropic_refiner = AnthropicRefiner()
 
@@ -135,7 +137,8 @@ class WatchChartsScraper:
                     'size': size,
                 }
 
-                await asyncio.to_thread(self.insert_or_update_product, base_data, category)
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(self.executor, self.insert_or_update_product, base_data, category)
                 return base_data
 
             except Exception as e:
@@ -144,6 +147,6 @@ class WatchChartsScraper:
 
     def insert_or_update_product(self, base_data: dict, category: str):
         product = ProductModel(base_data, category)
-        self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
+        self.logger.info(f"➕ Inserting new product in DB: {base_data['url']} WATCHCHARTS")
 
         self.product_table.put_item(Item=product.to_dict())

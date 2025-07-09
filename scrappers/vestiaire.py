@@ -172,7 +172,7 @@ class VestiaireScraper:
                 
             await asyncio.to_thread(self.insert_products_bulk, results, category)
 
-            self.logger.info(f"📦 {condition_label}: {len(results)} items scraped from Vestiaire for '{query}'")
+            self.logger.info(f"📦 {condition_label}: {len(results)} items scraped from Vestiaire for '{query}' VESTIAIRE")
             return results
 
         except Exception as e:
@@ -185,3 +185,4 @@ class VestiaireScraper:
             for item in items:
                 product = ProductModel(item, category)
                 batch.put_item(Item=product.to_dict())
+        
