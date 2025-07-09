@@ -13,21 +13,21 @@ class AnthropicRefiner:
         # Use whichever Claude model suits your needs
         self.model = "claude-3-5-sonnet-20240620"
 
-    @backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=5)
+    @backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=2)
     def call_claude(self, prompt, max_tokens=1024, temperature=0.0):
-        resp = self.client.messages.create(
-            model=self.model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        # resp.content is a list of TextBlock objects
-        if isinstance(resp.content, list):
-            # Extract and concatenate all block.text strings
-            text = "".join(block.text for block in resp.content if hasattr(block, "text"))
-        else:
-            text = resp.content or ""
-        return text
+        try:
+            resp = self.client.messages.create(
+                model=self.model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            if isinstance(resp.content, list):
+                return "".join(block.text for block in resp.content if hasattr(block, "text")).strip()
+            return (resp.content or "").strip()
+        except Exception as e:
+            print(f"⚠️ Claude API error: {e}")
+            return ""
 
 
     def refine_query(self, base_query, image_url=None):
