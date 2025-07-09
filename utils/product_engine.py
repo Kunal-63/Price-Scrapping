@@ -80,49 +80,49 @@ class ProductSearchEngine:
         logger.info(f"Final Search Query: {final_query}")
 
         async def fetch(scraper, name):
-            start = time.time()
-            logger.info(f"🚀 Starting {name} scraper...")
             try:
-                result = await scraper.search(query, category, product_id, image_query, final_query)
-                duration = time.time() - start
+                result = await scraper.search(final_query, category, product_id, image_query, final_query)
                 if isinstance(result, dict) and "active" in result:
-                    logger.info(f"✅ {name} done in {duration:.2f}s — {len(result['active'])} active, {len(result['sold'])} sold")
+                    logger.info(f"{name} Results: {len(result['active'])} active, {len(result['sold'])} sold")
                 else:
-                    logger.info(f"✅ {name} done in {duration:.2f}s — {len(result)} items")
+                    logger.info(f"{name} Results: {len(result)} items found")
                 return result
             except Exception as e:
-                logger.error(f"❌ Error fetching from {name}: {e}")
+                logger.error(f"Error fetching from {name}: {e}")
                 return {"active": [], "sold": []} if name == "eBay" else []
 
-        tasks = [
-            ("ebay_results", fetch(self.ebay_scraper, "eBay")),
-            ("stockx_results", fetch(self.stockx_scraper, "StockX")),
-            # ("goat_results", fetch(self.goat_scraper, "Goat")),
-            # ("flightclub_results", fetch(self.flightclub, "Flight Club")),
-            ("fashionphile_results", fetch(self.fashionphile, "Fashionphile")),
-            ("realreal_results", fetch(self.realreal, "The RealReal")),
-            ("rebag_results", fetch(self.rebag, "Rebag")),
-            ("vestiaire_results", fetch(self.vestiaire, "Vestiaire")),
-            ("grailed_results", fetch(self.grailed, "Grailed")),
-            ("farfetch_results", fetch(self.farfetch, "Farfetch")),
-            ("google_shopping_results", fetch(self.serpapi_searcher, "Google Shopping")),
-        ]
-
-        if category == 'accessories':
-            tasks.extend([
-                ("watchcharts_results", fetch(self.watchcharts, "WatchCharts")),
-                ("chrono24_results", fetch(self.chrono24, "Chrono24")),
-            ])
-
-        names, coroutines = zip(*tasks)
-
-        results = await asyncio.gather(*coroutines)
+        results = await asyncio.gather(
+            fetch(self.ebay_scraper, "eBay"),
+            fetch(self.stockx_scraper, "StockX"),
+            # fetch(self.goat_scraper, "Goat"),
+            # fetch(self.flightclub, "Flight Club"),
+            fetch(self.watchcharts, "WatchCharts"),
+            fetch(self.chrono24, "Chrono24"),
+            fetch(self.fashionphile, "Fashionphile"),
+            fetch(self.realreal, "The RealReal"),
+            fetch(self.rebag, "Rebag"),
+            fetch(self.vestiaire, "Vestiaire"),
+            fetch(self.grailed, "Grailed"),
+            fetch(self.farfetch, "Farfetch"),
+            fetch(self.serpapi_searcher, "Google Shopping")
+        )
 
         combined = {
             "query": final_query,
-            **dict(zip(names, results))
+            "ebay_results": results[0],
+            "stockx_results": results[1],
+            # "goat_results": results[2],
+            # "flightclub_results": results[3],
+            "watchcharts_results": results[2],
+            "chrono24_results": results[3],
+            "fashionphile_results": results[4],
+            "realreal_results": results[5],
+            "rebag_results": results[6],
+            "vestiaire_results": results[7],
+            "grailed_results": results[8],
+            "farfetch_results": results[9],
+            "google_shopping_results": results[10]
         }
-
 
         logger.info("Final Combined Results prepared.")
         return combined
