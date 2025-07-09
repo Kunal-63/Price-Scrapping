@@ -7,7 +7,7 @@ class Utility:
         return str(uuid.uuid4())
     
     @staticmethod
-    def extract_location_from_title(self, title: str) -> str:
+    def extract_location_from_title(title: str) -> str:
         if not title:
             return "US"
 
