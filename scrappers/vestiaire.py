@@ -154,10 +154,11 @@ class VestiaireScraper:
                     }
 
                     results.append(result)
-                    self.insert_or_update_product(result, category)
 
                 except Exception as e:
                     self.logger.warning(f"⚠️ Skipping item due to parse error: {e}")
+                
+            await asyncio.to_thread(self.insert_products_bulk, results, category)
 
             self.logger.info(f"📦 {condition_label}: {len(results)} items scraped from Vestiaire for '{query}'")
             return results
@@ -167,8 +168,8 @@ class VestiaireScraper:
             return []
 
 
-    def insert_or_update_product(self, base_data: dict, category: str):
-        product = ProductModel(base_data, category)
-        self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
-
-        self.product_table.put_item(Item=product.to_dict())
+    def insert_products_bulk(self, items: list, category: str):
+        with self.product_table.batch_writer(overwrite_by_pkeys=["url"]) as batch:
+            for item in items:
+                product = ProductModel(item, category)
+                batch.put_item(Item=product.to_dict())

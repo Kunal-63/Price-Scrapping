@@ -138,16 +138,27 @@ class RebagScraper:
                 }
 
                 results.append(base_data)
-                self.insert_or_update_product(base_data, category)
+                # self.insert_or_update_product(base_data, category)
 
             except Exception as e:
                 self.logger.warning(f"⚠️ Failed to parse product: {e}")
 
+        if results:
+            await self.batch_insert_products(results, category)
+
         self.logger.info(f"📦 Parsed {len(results)} '{condition_label}' products from Rebag")
         return results
 
-    def insert_or_update_product(self, base_data: dict, category: str):
-        product = ProductModel(base_data, category)
-        self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
+    async def batch_insert_products(self, items: list[dict], category: str):
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._sync_batch_insert, items, category)
 
-        self.product_table.put_item(Item=product.to_dict())
+    def _sync_batch_insert(self, items: list[dict], category: str):
+        try:
+            with self.product_table.batch_writer(overwrite_by_pkeys=["url"]) as batch:
+                for item in items:
+                    product = ProductModel(item, category)
+                    batch.put_item(Item=product.to_dict())
+            self.logger.info(f"✅ Inserted {len(items)} items in batch.")
+        except Exception as e:
+            self.logger.exception(f"❌ Batch insert failed: {e}")

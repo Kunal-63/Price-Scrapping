@@ -7,7 +7,7 @@ from scrapfly import ScrapflyClient, ScrapeConfig, ScrapflyScrapeError
 from boto3.session import Session
 from boto3.dynamodb.conditions import Key
 import backoff
-
+from concurrent.futures import ThreadPoolExecutor
 from price_parser import Price
 from utils.logger import get_logger
 from utils.utility import Utility
@@ -25,6 +25,8 @@ class Chrono24Scraper:
         session = Session()
         dynamodb = session.resource("dynamodb", region_name="us-east-1")
         self.product_table = dynamodb.Table("ProductsTable")
+        self.executor = ThreadPoolExecutor(max_workers=8)
+
 
     @backoff.on_exception(
         backoff.expo,
@@ -72,7 +74,7 @@ class Chrono24Scraper:
 
     async def fetch_and_parse(self, url, category, product_id, image_query, search_query):
         try:
-            self.logger.debug(f"\ud83c\udf10 Scraping filtered URL: {url}")
+            self.logger.debug(f"\U0001F310 Scraping filtered URL: {url}")
             resp = await self.scrape_with_retries(ScrapeConfig(
                 url=url,
                 asp=True,
@@ -99,7 +101,7 @@ class Chrono24Scraper:
         size = f"{min(map(int, diameters))}mm - {max(map(int, diameters))}mm" if diameters else "Unknown"
 
         soup = BeautifulSoup(resp.scrape_result.get("content", ""), "html.parser")
-        results = []
+        items_to_insert = []
 
         for script in soup.find_all("script", {"type": "application/ld+json"}):
             try:
@@ -143,20 +145,41 @@ class Chrono24Scraper:
                                     "size": size
                                 }
 
-                                results.append(base_data)
-                                self.insert_or_update_product(base_data, category)
+                                product = ProductModel(base_data, category)
+                                items_to_insert.append(product.to_dict())
 
             except json.JSONDecodeError:
-                self.logger.warning("\u26a0\ufe0f Skipped invalid JSON-LD script block")
+                self.logger.warning("\u26A0 Skipped invalid JSON-LD script block")
 
-        self.logger.info(f"\ud83d\udce6 Parsed {len(results)} products from {url}")
-        return results
+        if items_to_insert:
+            self.bulk_insert_products(items_to_insert)
 
-    def insert_or_update_product(self, base_data: dict, category: str):
-        try:
-            product = ProductModel(base_data, category)
-            self.logger.info(f"\ud83d\udd04 Inserting existing product: {base_data['url']}")
+        self.logger.info(f"\U0001F4E6 Parsed {len(items_to_insert)} products from {url}")
+        return items_to_insert
 
-            self.product_table.put_item(Item=product.to_dict())
-        except Exception as e:
-            self.logger.exception(f"\u274c DynamoDB insert/update failed: {e}")
+    def bulk_insert_products(self, items: list):
+        if not items:
+            return
+
+        def write_batch(batch):
+            try:
+                with self.product_table.batch_writer(overwrite_by_pkeys=["url"]) as writer:
+                    for item in batch:
+                        writer.put_item(Item=item)
+                self.logger.info(f"✅ Inserted batch of {len(batch)} items.")
+            except Exception as e:
+                self.logger.exception(f"❌ Batch insert failed: {e}")
+
+        # DynamoDB batch size limit
+        def chunks(data, size=25):
+            for i in range(0, len(data), size):
+                yield data[i:i + size]
+
+        batches = list(chunks(items, 25))
+
+        # Dispatch threads
+        futures = [self.executor.submit(write_batch, batch) for batch in batches]
+
+        # Wait for all to finish
+        for future in futures:
+            future.result()

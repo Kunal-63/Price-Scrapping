@@ -145,17 +145,24 @@ class RealRealScraper:
                 }
 
                 results.append(item)
-                self.insert_or_update_product(item, category)
+                # self.insert_or_update_product(item, category)
 
             except Exception as e:
                 self.logger.warning(f"⚠️ Skipping item due to parse error: {e}")
+        
+        if results:
+            await self.batch_insert_products(results, category)
 
         self.logger.info(f"✅ {condition_label}: {len(results)} items scraped for '{query}'")
         return results
 
 
-    def insert_or_update_product(self, base_data: dict, category: str):
-        product = ProductModel(base_data, category)
-        self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
+    async def batch_insert_products(self, items: list[dict], category: str):
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._sync_batch_insert, items, category)
 
-        self.product_table.put_item(Item=product.to_dict())
+    def _sync_batch_insert(self, items: list[dict], category: str):
+        with self.product_table.batch_writer(overwrite_by_pkeys=["url"]) as batch:
+            for item in items:
+                product = ProductModel(item, category)
+                batch.put_item(Item=product.to_dict())

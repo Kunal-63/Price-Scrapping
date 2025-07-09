@@ -14,6 +14,7 @@ from boto3.dynamodb.conditions import Attr
 from config.scrapper_config import Config
 from utils.antropic import AnthropicRefiner
 import backoff
+from concurrent.futures import ThreadPoolExecutor
 
 class FarfetchScraper:
     def __init__(self, scrapfly_key):
@@ -26,6 +27,8 @@ class FarfetchScraper:
 
         self.semaphore = asyncio.Semaphore(10)
         self.anthropic_refiner = AnthropicRefiner()
+        self.executor = ThreadPoolExecutor(max_workers=8)
+
 
     @backoff.on_exception(
         backoff.expo,
@@ -123,14 +126,34 @@ class FarfetchScraper:
             except Exception as e:
                 self.logger.warning(f"⚠️ Skipping item due to parse error: {e}")
 
-        for item in results:
-            self.insert_or_update_product(item, category)
+        products_to_insert = [ProductModel(item, category).to_dict() for item in results]
+        self.bulk_insert_products(products_to_insert)
 
         self.logger.info(f"✅ Farfetch results fetched: {len(results)}")
         return results
 
-    def insert_or_update_product(self, base_data: dict, category: str):
-        product = ProductModel(base_data, category)
-        self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
+    def bulk_insert_products(self, items: list):
+        if not items:
+            return
 
-        self.product_table.put_item(Item=product.to_dict())
+        def write_batch(batch):
+            try:
+                with self.product_table.batch_writer(overwrite_by_pkeys=["url"]) as writer:
+                    for item in batch:
+                        writer.put_item(Item=item)
+                self.logger.info(f"✅ Inserted batch of {len(batch)} items.")
+            except Exception as e:
+                self.logger.exception(f"❌ Batch insert failed: {e}")
+
+        # Split into chunks of 25
+        def chunks(data, size=25):
+            for i in range(0, len(data), size):
+                yield data[i:i + size]
+
+        batches = list(chunks(items, 25))
+        futures = [self.executor.submit(write_batch, batch) for batch in batches]
+
+        # Optional: wait for all threads to finish
+        for f in futures:
+            f.result()
+

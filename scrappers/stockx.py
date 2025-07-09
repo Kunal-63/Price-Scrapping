@@ -13,6 +13,7 @@ from boto3.dynamodb.conditions import Attr
 from models.product_item import ProductModel
 from utils.antropic import AnthropicRefiner
 import backoff
+import concurrent.futures
 
 class StockXScraper:
     def __init__(self, scrapfly_key):
@@ -99,10 +100,7 @@ class StockXScraper:
 
                 results.append(base_data)
 
-            await asyncio.gather(*[
-                asyncio.to_thread(self.insert_or_update_product, item, category)
-                for item in results
-            ])
+            await asyncio.to_thread(self.bulk_insert_products, results, category)
 
             self.logger.info(f"✅ StockX results fetched: {len(results)}")
             return results
@@ -111,8 +109,9 @@ class StockXScraper:
             self.logger.exception("❌ Failed to scrape StockX")
             return []
 
-    def insert_or_update_product(self, base_data: dict, category: str):
-        product = ProductModel(base_data, category)
-        self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
-
-        self.product_table.put_item(Item=product.to_dict())
+    def bulk_insert_products(self, items, category):
+        self.logger.info(f"🚀 Bulk inserting {len(items)} StockX products")
+        with self.product_table.batch_writer(overwrite_by_pkeys=["url"]) as batch:
+            for item in items:
+                product = ProductModel(item, category)
+                batch.put_item(Item=product.to_dict())

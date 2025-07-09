@@ -53,6 +53,7 @@ class EbayScraper:
 
     async def get_active_listings(self, query, category, product_id, image_query, search_query):
         listings = []
+        products_to_insert = []
         sem = asyncio.Semaphore(self.MAX_CONCURRENT_DETAIL_FETCHES)
 
         urls = [
@@ -95,19 +96,26 @@ class EbayScraper:
                 items = soup.select(".s-item")
                 for item in items:
                     tasks.append(self._parse_item(
-                        item, sem, product_id, image_query, search_query, category, listings
+                        item, sem, product_id, image_query, search_query,
+                        category, listings, products_to_insert
                     ))
             except Exception as e:
                 self.logger.exception(f"❌ Failed to parse response content: {e}")
                 continue
 
         await asyncio.gather(*tasks)
+        await asyncio.get_event_loop().run_in_executor(
+            self.executor, self.bulk_insert_products, products_to_insert
+        )
+
         self.logger.info(f"✅ Active listings fetched and parsed: {len(listings)}")
         return listings
 
     async def get_sold_items(self, query, category, product_id, image_query, search_query):
         listings = []
+        products_to_insert = []
         sem = asyncio.Semaphore(self.MAX_CONCURRENT_DETAIL_FETCHES)
+
         url = f"https://www.ebay.com/sch/i.html?_nkw={quote(query)}&_sop=13&LH_Complete=1&LH_Sold=1"
         self.logger.debug(f"📱 Fetching sold listings: {url}")
 
@@ -128,12 +136,21 @@ class EbayScraper:
 
         soup = BeautifulSoup(resp.scrape_result["content"], "html.parser")
         items = soup.select(".s-item")
-        tasks = [self._parse_item(item, sem, product_id, image_query, search_query, category, listings) for item in items]
+
+        tasks = [
+            self._parse_item(item, sem, product_id, image_query, search_query, category, listings, products_to_insert)
+            for item in items
+        ]
+
         await asyncio.gather(*tasks)
+        await asyncio.get_event_loop().run_in_executor(
+            self.executor, self.bulk_insert_products, products_to_insert
+        )
+
         self.logger.info(f"✅ Sold listings fetched and parsed: {len(listings)}")
         return listings
 
-    async def _parse_item(self, item, sem, product_id, image_query, search_query, category, listings):
+    async def _parse_item(self, item, sem, product_id, image_query, search_query, category, listings, products_to_insert):
         async with sem:
             try:
                 title_el = item.select_one(".s-item__title")
@@ -156,7 +173,6 @@ class EbayScraper:
 
                 detail_url = link_el['href']
                 size = self.anthropic_refiner.extract_size_from_title(title_text)
-
                 location = self.anthropic_refiner.refine_location(item.select_one(".s-item__location").text.strip() if item.select_one(".s-item__location") else "Not specified")
 
                 base_data = {
@@ -174,21 +190,35 @@ class EbayScraper:
                     "size": size,
                 }
 
+                product = ProductModel(base_data, category)
+                products_to_insert.append(product.to_dict())
                 listings.append(base_data)
-                await asyncio.get_event_loop().run_in_executor(
-                    self.executor,
-                    self.insert_or_update_product,
-                    base_data,
-                    category
-                )
             except Exception as e:
                 self.logger.exception(f"❌ Error parsing item: {e}")
 
-    def insert_or_update_product(self, base_data: dict, category: str):
-        try:
-            product = ProductModel(base_data, category)
-            self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
+    def bulk_insert_products(self, items: list):
+        if not items:
+            return
 
-            self.product_table.put_item(Item=product.to_dict())
-        except Exception as e:
-            self.logger.exception(f"❌ Error inserting/updating product: {e}")
+        def write_batch(batch):
+            try:
+                with self.product_table.batch_writer(overwrite_by_pkeys=["url"]) as writer:
+                    for item in batch:
+                        writer.put_item(Item=item)
+                self.logger.info(f"✅ Inserted batch of {len(batch)} items.")
+            except Exception as e:
+                self.logger.exception(f"❌ Batch insert failed: {e}")
+
+        # Split into batches of 25
+        def chunks(data, size=25):
+            for i in range(0, len(data), size):
+                yield data[i:i + size]
+
+        batches = list(chunks(items, 25))
+
+        # Submit each batch as a separate thread
+        futures = [self.executor.submit(write_batch, batch) for batch in batches]
+
+        # Optionally wait for all threads to complete
+        for future in futures:
+            future.result()

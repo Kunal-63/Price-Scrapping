@@ -14,6 +14,7 @@ from config.scrapper_config import Config
 from price_parser.parser import Price
 from utils.antropic import AnthropicRefiner
 import backoff
+from concurrent.futures import ThreadPoolExecutor
 
 class GrailedScraper:
     def __init__(self, scrapfly_key):
@@ -24,6 +25,7 @@ class GrailedScraper:
         self.product_table = dynamodb.Table("ProductsTable")
         self.semaphore = asyncio.Semaphore(10)
         self.anthropic_refiner = AnthropicRefiner()
+        self.executor = ThreadPoolExecutor(max_workers=8)
 
     @backoff.on_exception(
         backoff.expo,
@@ -141,15 +143,34 @@ class GrailedScraper:
                     "bid_count": "0"
                 }
 
-                results.append(result)
-                self.insert_or_update_product(result, category)
+                product = ProductModel(result, category)
+                results.append(product.to_dict())
             except Exception as e:
                 self.logger.warning(f"⚠️ Error parsing item: {e}")
+        
+        self.bulk_insert_products(results)
 
         return results
 
-    def insert_or_update_product(self, base_data: dict, category: str):
-        product = ProductModel(base_data, category)
-        self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
+    def bulk_insert_products(self, items: list):
+        if not items:
+            return
 
-        self.product_table.put_item(Item=product.to_dict())
+        def write_batch(batch):
+            try:
+                with self.product_table.batch_writer(overwrite_by_pkeys=["url"]) as writer:
+                    for item in batch:
+                        writer.put_item(Item=item)
+                self.logger.info(f"✅ Inserted batch of {len(batch)} items.")
+            except Exception as e:
+                self.logger.exception(f"❌ Batch insert failed: {e}")
+
+        def chunks(data, size=25):
+            for i in range(0, len(data), size):
+                yield data[i:i + size]
+
+        batches = list(chunks(items, 25))
+        futures = [self.executor.submit(write_batch, batch) for batch in batches]
+
+        for future in futures:
+            future.result()

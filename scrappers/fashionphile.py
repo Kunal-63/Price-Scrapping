@@ -15,6 +15,7 @@ from config.scrapper_config import Config
 import backoff
 from utils.antropic import AnthropicRefiner
 from price_parser import Price
+from concurrent.futures import ThreadPoolExecutor
 
 class FashionphileScraper:
     def __init__(self, scrapfly_key):
@@ -33,6 +34,7 @@ class FashionphileScraper:
 
         self.semaphore = asyncio.Semaphore(10)
         self.anthropic_refiner = AnthropicRefiner()
+        self.executor = ThreadPoolExecutor(max_workers=8)
 
         self.condition_map = {
             "giftable": "Giftable",
@@ -140,18 +142,39 @@ class FashionphileScraper:
                     "size": size
                 }
 
-                self.insert_or_update_product(base_data, category)
-                results.append(base_data)
+                product = ProductModel(base_data, category)
+                results.append(product.to_dict())
 
             except Exception as e:
                 self.logger.warning(f"⚠️ Failed to parse a product card: {e}")
                 continue
 
+        self.bulk_insert_products(results)
+
         self.logger.info(f"✅ Fashionphile results fetched: {len(results)}")
         return results
 
-    def insert_or_update_product(self, base_data: dict, category: str):
-        product = ProductModel(base_data, category)
-        self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
+    def bulk_insert_products(self, items: list):
+        if not items:
+            return
 
-        self.product_table.put_item(Item=product.to_dict())
+        def write_batch(batch):
+            try:
+                with self.product_table.batch_writer(overwrite_by_pkeys=["url"]) as writer:
+                    for item in batch:
+                        writer.put_item(Item=item)
+                self.logger.info(f"✅ Inserted batch of {len(batch)} items.")
+            except Exception as e:
+                self.logger.exception(f"❌ Batch insert failed: {e}")
+
+        # Split into chunks of 25
+        def chunks(data, size=25):
+            for i in range(0, len(data), size):
+                yield data[i:i + size]
+
+        batches = list(chunks(items, 25))
+        futures = [self.executor.submit(write_batch, batch) for batch in batches]
+
+        # Optional: wait for all threads to finish
+        for f in futures:
+            f.result()
