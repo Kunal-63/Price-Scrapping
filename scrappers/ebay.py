@@ -30,7 +30,7 @@ class EbayScraper:
     async def search(self, query, category, product_id, image_query, search_query):
         if not category:
             raise ValueError("Category must be specified for eBay search.")
-        self.logger.info(f"🔍 Starting eBay search for: {query}")
+        self.logger.info(f"[eBay] 🔍 Starting eBay search for: {query}")
         try:
             active, sold = await asyncio.gather(
                 self.get_active_listings(query, category, product_id, image_query, search_query),
@@ -38,7 +38,7 @@ class EbayScraper:
             )
             return {'active': active, 'sold': sold}
         except Exception as e:
-            self.logger.exception(f"❌ Error during eBay search: {e}")
+            self.logger.exception(f"[eBay] ❌ Error during eBay search: {e}")
             return {'active': [], 'sold': []}
 
     @backoff.on_exception(
@@ -48,7 +48,7 @@ class EbayScraper:
         giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)
     )
     async def scrape_with_retries(self, config):
-        self.logger.debug(f"⏳ Scraping URL: {config.url}")
+        self.logger.debug(f"[eBay] ⏳ Scraping URL: {config.url}")
         return await self.client.async_scrape(config)
 
     async def get_active_listings(self, query, category, product_id, image_query, search_query):
@@ -75,7 +75,7 @@ class EbayScraper:
             for url in urls
         ]
 
-        self.logger.debug(f"🚀 Fetching active listings concurrently from {len(urls)} pages.")
+        self.logger.debug(f"[eBay] 🚀 Fetching active listings concurrently from {len(urls)} pages.")
         try:
             responses = await asyncio.gather(
                 *(self.scrape_with_retries(cfg) for cfg in scrape_configs),
@@ -108,7 +108,7 @@ class EbayScraper:
             self.executor, self.bulk_insert_products, products_to_insert
         )
 
-        self.logger.info(f"✅ Active listings fetched and parsed: {len(listings)}")
+        self.logger.info(f"[eBay] ✅ Active listings fetched and parsed: {len(listings)}")
         return listings
 
     async def get_sold_items(self, query, category, product_id, image_query, search_query):
@@ -117,7 +117,7 @@ class EbayScraper:
         sem = asyncio.Semaphore(self.MAX_CONCURRENT_DETAIL_FETCHES)
 
         url = f"https://www.ebay.com/sch/i.html?_nkw={quote(query)}&_sop=13&LH_Complete=1&LH_Sold=1"
-        self.logger.debug(f"📱 Fetching sold listings: {url}")
+        self.logger.debug(f"[eBay] 📱 Fetching sold listings: {url}")
 
         try:
             resp = await self.scrape_with_retries(ScrapeConfig(
@@ -147,7 +147,7 @@ class EbayScraper:
             self.executor, self.bulk_insert_products, products_to_insert
         )
 
-        self.logger.info(f"✅ Sold listings fetched and parsed: {len(listings)}")
+        self.logger.info(f"[eBay] ✅ Sold listings fetched and parsed: {len(listings)}")
         return listings
 
     async def _parse_item(self, item, sem, product_id, image_query, search_query, category, listings, products_to_insert):
@@ -203,10 +203,10 @@ class EbayScraper:
                 products_to_insert.append(product.to_dict())
                 listings.append(base_data)
             except Exception as e:
-                self.logger.exception(f"❌ Error parsing item: {e}")
+                self.logger.exception(f"[eBay] ❌ Error parsing item: {e}")
 
     def bulk_insert_products(self, items: list):
-        self.logger.info("INSERTING IN EBAY")
+        self.logger.info("[eBay] INSERTING IN EBAY")
         if not items:
             return
 
@@ -215,9 +215,9 @@ class EbayScraper:
                 with self.product_table.batch_writer(overwrite_by_pkeys=["url"]) as writer:
                     for item in batch:
                         writer.put_item(Item=item)
-                self.logger.info(f"✅ Inserted batch of {len(batch)} items. EBAY")
+                self.logger.info(f"[eBay] ✅ Inserted batch of {len(batch)} items. EBAY")
             except Exception as e:
-                self.logger.exception(f"❌ Batch insert failed: {e}")
+                self.logger.exception(f"[eBay] ❌ Batch insert failed: {e}")
 
         def chunks(data, size=25):
             for i in range(0, len(data), size):

@@ -38,7 +38,7 @@ class GrailedScraper:
             return await self.client.async_scrape(config)
         
     async def search(self, query, category, product_id, image_query, search_query):
-        self.logger.info(f"🔍 Searching Grailed for query: {query} across all conditions")
+        self.logger.info(f"[Grailed] 🔍 Searching Grailed for query: {query} across all conditions")
 
         # Define all condition filters
         condition_filters = {
@@ -61,7 +61,7 @@ class GrailedScraper:
 
     async def search_by_condition(self, query, category, product_id, image_query, search_query, condition_code, condition_label):
         url = f"https://www.grailed.com/shop?query={quote(query)}&condition={quote(condition_code)}"
-        self.logger.info(f"🔍 Scraping: {condition_label} items for {query}")
+        self.logger.info(f"[Grailed] 🔍 Scraping: {condition_label} items for {query}")
 
         try:
             resp = await self.scrape_with_retries(ScrapeConfig(
@@ -75,13 +75,13 @@ class GrailedScraper:
                 timeout=60000
             ))
         except Exception as e:
-            self.logger.error(f"❌ Failed to scrape {condition_label}: {e}")
+            self.logger.error(f"[Grailed] ❌ Failed to scrape {condition_label}: {e}")
             return []
 
         html = resp.scrape_result.get("content", "")
         soup = BeautifulSoup(html, "html.parser")
         items = soup.select("div.UserItem_root__8Q2R_")
-        self.logger.info(f"✅ {len(items)} {condition_label} items found")
+        self.logger.info(f"[Grailed] ✅ {len(items)} {condition_label} items found")
 
         results = []
         for item in items:
@@ -156,7 +156,7 @@ class GrailedScraper:
                 product = ProductModel(result, category)
                 results.append(product.to_dict())
             except Exception as e:
-                self.logger.warning(f"⚠️ Error parsing item: {e}")
+                self.logger.warning(f"[Grailed] ⚠️ Error parsing item: {e}")
         
         self.bulk_insert_products(results)
 
@@ -171,9 +171,9 @@ class GrailedScraper:
                 with self.product_table.batch_writer(overwrite_by_pkeys=["url"]) as writer:
                     for item in batch:
                         writer.put_item(Item=item)
-                self.logger.info(f"✅ Inserted batch of {len(batch)} items. GRAILED")
+                self.logger.info(f"[Grailed] ✅ Inserted batch of {len(batch)} items. GRAILED")
             except Exception as e:
-                self.logger.exception(f"❌ Batch insert failed: {e}")
+                self.logger.exception(f"[Grailed] ❌ Batch insert failed: {e}")
 
         def chunks(data, size=25):
             for i in range(0, len(data), size):

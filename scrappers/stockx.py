@@ -103,15 +103,15 @@ class StockXScraper:
 
             await asyncio.to_thread(self.bulk_insert_products, results, category)
 
-            self.logger.info(f"✅ StockX results fetched: {len(results)} STOCKX")
+            self.logger.info(f"[StockX] ✅ StockX results fetched: {len(results)} STOCKX")
             return results
 
         except Exception as e:
-            self.logger.exception("❌ Failed to scrape StockX")
+            self.logger.exception("[StockX] ❌ Failed to scrape StockX")
             return []
 
     def bulk_insert_products(self, items, category):
-        self.logger.info(f"🚀 Bulk inserting {len(items)} StockX products")
+        self.logger.info(f"[StockX] 🚀 Bulk inserting {len(items)} StockX products")
         with self.product_table.batch_writer(overwrite_by_pkeys=["url"]) as batch:
             for item in items:
                 product = ProductModel(item, category)

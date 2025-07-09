@@ -35,7 +35,7 @@ class Chrono24Scraper:
         giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)
     )
     async def scrape_with_retries(self, config):
-        self.logger.debug(f"\u23f3 Scraping URL: {config.url}")
+        self.logger.debug(f"[Chrono24] ⏳ Scraping URL: {config.url}")
         async with self.semaphore:
             return await self.client.async_scrape(config)
 
@@ -54,7 +54,7 @@ class Chrono24Scraper:
             for condition in condition_filters
         ]
 
-        self.logger.info(f"\ud83d\udd0d Launching Chrono24 search for: {query} with {len(urls)} conditions")
+        self.logger.info(f"[Chrono24] 🔍 Launching Chrono24 search for: {query} with {len(urls)} conditions")
         tasks = [
             self.fetch_and_parse(url, category, product_id, image_query, search_query)
             for url in urls
@@ -69,12 +69,12 @@ class Chrono24Scraper:
                     seen.add(item["url"])
                     merged.append(item)
 
-        self.logger.info(f"\u2705 Total unique Chrono24 items inserted: {len(merged)}")
+        self.logger.info(f"[Chrono24] ✅ Total unique Chrono24 items inserted: {len(merged)}")
         return merged
 
     async def fetch_and_parse(self, url, category, product_id, image_query, search_query):
         try:
-            self.logger.debug(f"\U0001F310 Scraping filtered URL: {url}")
+            self.logger.debug(f"[Chrono24] 🌐 Scraping filtered URL: {url}")
             resp = await self.scrape_with_retries(ScrapeConfig(
                 url=url,
                 asp=True,
@@ -91,7 +91,7 @@ class Chrono24Scraper:
                 }
             ))
         except Exception as e:
-            self.logger.exception(f"\u274c Failed to scrape filtered URL: {e}")
+            self.logger.exception(f"[Chrono24] ❌ Failed to scrape filtered URL: {e}")
             return []
 
         parsed_url = urlparse(url)
@@ -156,12 +156,12 @@ class Chrono24Scraper:
                                 items_to_insert.append(product.to_dict())
 
             except json.JSONDecodeError:
-                self.logger.warning("\u26A0 Skipped invalid JSON-LD script block")
+                self.logger.warning("[Chrono24] ⚠️ Skipped invalid JSON-LD script block")
 
         if items_to_insert:
             self.bulk_insert_products(items_to_insert)
 
-        self.logger.info(f"\U0001F4E6 Parsed {len(items_to_insert)} products from {url}")
+        self.logger.info(f"[Chrono24] 📦 Parsed {len(items_to_insert)} products from {url}")
         return items_to_insert
 
     def bulk_insert_products(self, items: list):
@@ -174,9 +174,9 @@ class Chrono24Scraper:
                     for item in batch:
                         writer.put_item(Item=item)
                         self.logger.info(f"Inserting... {item}")
-                self.logger.info(f"✅ Inserted batch of {len(batch)} items. CHRONO")
+                self.logger.info(f"[Chrono24] ✅ Inserted batch of {len(batch)} items. CHRONO")
             except Exception as e:
-                self.logger.exception(f"❌ Batch insert failed: {e}")
+                self.logger.exception(f"[Chrono24] ❌ Batch insert failed: {e}")
 
         def chunks(data, size=25):
             for i in range(0, len(data), size):

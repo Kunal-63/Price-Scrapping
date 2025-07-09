@@ -86,7 +86,7 @@ class VestiaireScraper:
             xhr_calls = page_resp.scrape_result["browser_data"]["xhr_call"]
             search_call = next((call for call in xhr_calls if "product/search" in call["url"]), None)
             if not search_call:
-                self.logger.warning("❌ Couldn't find the product search API call.")
+                self.logger.warning("[Vestiaire] ❌ Couldn't find the product search API call.")
                 return []
 
             initial_data = json.loads(search_call["response"]["body"])
@@ -95,7 +95,7 @@ class VestiaireScraper:
             results_raw = initial_data.get("items", [])
             total_pages = min(initial_data.get("paginationStats", {}).get("totalPages", 1), 5)
 
-            self.logger.info(f"✅ Page 1 scraped with {len(results_raw)} items")
+            self.logger.info(f"[Vestiaire] ✅ Page 1 scraped with {len(results_raw)} items")
 
             for page in range(1, total_pages):
                 offset = page * 48
@@ -121,7 +121,7 @@ class VestiaireScraper:
 
                 page_items = json.loads(page_data.scrape_result["content"]).get("items", [])
                 results_raw.extend(page_items)
-                self.logger.info(f"✅ Page {page + 1} scraped with {len(page_items)} items")
+                self.logger.info(f"[Vestiaire] ✅ Page {page + 1} scraped with {len(page_items)} items")
 
             for item in results_raw:
                 try:
@@ -168,15 +168,15 @@ class VestiaireScraper:
                     results.append(result)
 
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Skipping item due to parse error: {e}")
+                    self.logger.warning(f"[Vestiaire] ⚠️ Skipping item due to parse error: {e}")
                 
             await asyncio.to_thread(self.insert_products_bulk, results, category)
 
-            self.logger.info(f"📦 {condition_label}: {len(results)} items scraped from Vestiaire for '{query}' VESTIAIRE")
+            self.logger.info(f"[Vestiaire] 📦 {condition_label}: {len(results)} items scraped from Vestiaire for '{query}' VESTIAIRE")
             return results
 
         except Exception as e:
-            self.logger.exception(f"❌ Vestiaire scraping failed for condition {condition_label}")
+            self.logger.exception(f"[Vestiaire] ❌ Vestiaire scraping failed for condition {condition_label}")
             return []
 
 

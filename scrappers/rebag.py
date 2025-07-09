@@ -36,7 +36,7 @@ class RebagScraper:
         }
 
     async def search(self, query, category, product_id, image_query, search_query):
-        self.logger.info(f"🔍 Searching Rebag for query: {query} across all conditions")
+        self.logger.info(f"[Rebag] 🔍 Searching Rebag for query: {query} across all conditions")
 
         tasks = [
             self.search_by_condition(query, category, product_id, image_query, search_query, code, label)
@@ -55,13 +55,13 @@ class RebagScraper:
         giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)  # retry only if it's timeout
     )
     async def scrape_with_retries(self, config):
-        self.logger.debug(f"⏳ Scraping URL: {config.url}")
+        self.logger.debug(f"[Rebag] ⏳ Scraping URL: {config.url}")
         async with self.semaphore:
             return await self.client.async_scrape(config)
 
     async def search_by_condition(self, query, category, product_id, image_query, search_query, condition_code, condition_label):
         url = f"https://shop.rebag.com/collections/all?q={quote(query)}&pf_t_condition={condition_code}"
-        self.logger.info(f"🔍 Scraping Rebag {condition_label} items for '{query}'")
+        self.logger.info(f"[Rebag] 🔍 Scraping Rebag {condition_label} items for '{query}'")
 
         try:
             resp = await self.scrape_with_retries(ScrapeConfig(
@@ -75,7 +75,7 @@ class RebagScraper:
                 country="US"
             ))
         except Exception as e:
-            self.logger.exception(f"❌ Rebag scraping failed for condition {condition_label}")
+            self.logger.exception(f"[Rebag] ❌ Rebag scraping failed for condition {condition_label}")
             return []
 
         soup = BeautifulSoup(resp.scrape_result["content"], "html.parser")
@@ -149,12 +149,12 @@ class RebagScraper:
                 # self.insert_or_update_product(base_data, category)
 
             except Exception as e:
-                self.logger.warning(f"⚠️ Failed to parse product: {e}")
+                self.logger.warning(f"[Rebag] ⚠️ Failed to parse product: {e}")
 
         if results:
             await self.batch_insert_products(results, category)
 
-        self.logger.info(f"📦 Parsed {len(results)} '{condition_label}' products from Rebag")
+        self.logger.info(f"[Rebag] 📦 Parsed {len(results)} '{condition_label}' products from Rebag")
         return results
 
     async def batch_insert_products(self, items: list[dict], category: str):
@@ -167,6 +167,6 @@ class RebagScraper:
                 for item in items:
                     product = ProductModel(item, category)
                     batch.put_item(Item=product.to_dict())
-            self.logger.info(f"✅ Inserted {len(items)} items in batch. REBAG")
+            self.logger.info(f"[Rebag] ✅ Inserted {len(items)} items in batch. REBAG")
         except Exception as e:
-            self.logger.exception(f"❌ Batch insert failed: {e}")
+            self.logger.exception(f"[Rebag] ❌ Batch insert failed: {e}")

@@ -36,12 +36,12 @@ class WatchChartsScraper:
         giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)
     )
     async def scrape_with_retries(self, config):
-        self.logger.debug(f"⏳ Scraping URL: {config.url}")
+        self.logger.debug(f"[WatchCharts] ⏳ Scraping URL: {config.url}")
         async with self.scrape_semaphore:
             return await self.client.async_scrape(config)
 
     async def search(self, query, category, product_id, image_query, search_query):
-        self.logger.info(f"🔍 Searching WatchCharts for: {query}")
+        self.logger.info(f"[WatchCharts] 🔍 Searching WatchCharts for: {query}")
         url = f"https://watchcharts.com/listings?q={quote(query)}"
         results = []
 
@@ -70,11 +70,11 @@ class WatchChartsScraper:
             parsed_items = await asyncio.gather(*tasks)
             results = [r for r in parsed_items if r]  # filter None
 
-            self.logger.info(f"✅ WatchCharts results fetched: {len(results)}")
+            self.logger.info(f"[WatchCharts] ✅ WatchCharts results fetched: {len(results)}")
             return results
 
         except Exception as e:
-            self.logger.exception(f"❌ WatchCharts scraping failed: {e}")
+            self.logger.exception(f"[WatchCharts] ❌ WatchCharts scraping failed: {e}")
             return []
 
     async def _process_tile(self, anchor, category, product_id, image_query, search_query):
@@ -142,11 +142,11 @@ class WatchChartsScraper:
                 return base_data
 
             except Exception as e:
-                self.logger.warning(f"⚠️ Skipping WatchCharts item due to parse error: {e}")
+                self.logger.warning(f"[WatchCharts] ⚠️ Skipping WatchCharts item due to parse error: {e}")
                 return None
 
     def insert_or_update_product(self, base_data: dict, category: str):
         product = ProductModel(base_data, category)
-        self.logger.info(f"➕ Inserting new product in DB: {base_data['url']} WATCHCHARTS")
+        self.logger.info(f"[WatchCharts] ➕ Inserting new product in DB: {base_data['url']} WATCHCHARTS")
 
         self.product_table.put_item(Item=product.to_dict())

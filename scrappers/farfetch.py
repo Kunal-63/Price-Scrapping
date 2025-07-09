@@ -37,12 +37,12 @@ class FarfetchScraper:
         giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)
     )
     async def scrape_with_retries(self, config):
-        self.logger.debug(f"⏳ Scraping URL: {config.url}")
+        self.logger.debug(f"[Farfetch] ⏳ Scraping URL: {config.url}")
         async with self.semaphore:
             return await self.client.async_scrape(config)
 
     async def search(self, query, category, product_id, image_query, search_query):
-        self.logger.info(f"🔍 Searching Farfetch for query: {query}")
+        self.logger.info(f"[Farfetch] 🔍 Searching Farfetch for query: {query}")
         url = f"https://www.farfetch.com/shopping/men/items.aspx?query={quote(query)}"
 
         try:
@@ -57,7 +57,7 @@ class FarfetchScraper:
                 timeout=60000
             ))
         except Exception as e:
-            self.logger.exception(f"❌ Failed to fetch Farfetch listings: {e}")
+            self.logger.exception(f"[Farfetch] ❌ Failed to fetch Farfetch listings: {e}")
             return []
 
         html = resp.scrape_result.get("content", "")
@@ -132,12 +132,12 @@ class FarfetchScraper:
                 results.append(result)
 
             except Exception as e:
-                self.logger.warning(f"⚠️ Skipping item due to parse error: {e}")
+                self.logger.warning(f"[Farfetch] ⚠️ Skipping item due to parse error: {e}")
 
         products_to_insert = [ProductModel(item, category).to_dict() for item in results]
         self.bulk_insert_products(products_to_insert)
 
-        self.logger.info(f"✅ Farfetch results fetched: {len(results)}")
+        self.logger.info(f"[Farfetch] ✅ Farfetch results fetched: {len(results)}")
         return results
 
     def bulk_insert_products(self, items: list):
@@ -149,9 +149,9 @@ class FarfetchScraper:
                 with self.product_table.batch_writer(overwrite_by_pkeys=["url"]) as writer:
                     for item in batch:
                         writer.put_item(Item=item)
-                self.logger.info(f"✅ Inserted batch of {len(batch)} items. FARFETCH")
+                self.logger.info(f"[Farfetch] ✅ Inserted batch of {len(batch)} items. FARFETCH")
             except Exception as e:
-                self.logger.exception(f"❌ Batch insert failed: {e}")
+                self.logger.exception(f"[Farfetch] ❌ Batch insert failed: {e}")
 
         # Split into chunks of 25
         def chunks(data, size=25):

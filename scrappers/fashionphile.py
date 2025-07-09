@@ -85,7 +85,7 @@ class FashionphileScraper:
                 country="US"
             ))
         except Exception as e:
-            self.logger.exception(f"❌ Failed to fetch Fashionphile listings: {e}")
+            self.logger.exception(f"[Fashionphile] ❌ Failed to fetch Fashionphile listings: {e}")
             return []
 
         html = resp.scrape_result["content"]
@@ -147,12 +147,12 @@ class FashionphileScraper:
                 results.append(product.to_dict())
 
             except Exception as e:
-                self.logger.warning(f"⚠️ Failed to parse a product card: {e}")
+                self.logger.warning(f"[Fashionphile] ⚠️ Failed to parse a product card: {e}")
                 continue
 
         self.bulk_insert_products(results)
 
-        self.logger.info(f"✅ Fashionphile results fetched: {len(results)}")
+        self.logger.info(f"[Fashionphile] ✅ Fashionphile results fetched: {len(results)}")
         return results
 
     def bulk_insert_products(self, items: list):
@@ -164,9 +164,9 @@ class FashionphileScraper:
                 with self.product_table.batch_writer(overwrite_by_pkeys=["url"]) as writer:
                     for item in batch:
                         writer.put_item(Item=item)
-                self.logger.info(f"✅ Inserted batch of {len(batch)} items. FASHIONPHILE")
+                self.logger.info(f"[Fashionphile] ✅ Inserted batch of {len(batch)} items. FASHIONPHILE")
             except Exception as e:
-                self.logger.exception(f"❌ Batch insert failed: {e}")
+                self.logger.exception(f"[Fashionphile] ❌ Batch insert failed: {e}")
 
         # Split into chunks of 25
         def chunks(data, size=25):

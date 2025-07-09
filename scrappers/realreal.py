@@ -50,12 +50,12 @@ class RealRealScraper:
     giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)  # retry only if it's timeout
 )
     async def scrape_with_retries(self, config):
-        self.logger.debug(f"⏳ Scraping URL: {config.url}")
+        self.logger.debug(f"[RealReal] ⏳ Scraping URL: {config.url}")
         async with self.semaphore:
             return await self.client.async_scrape(config)
         
     async def search(self, query, category, product_id, image_query, search_query):
-        self.logger.info(f"🔍 Searching The RealReal for query: {query} across all conditions")
+        self.logger.info(f"[RealReal] 🔍 Searching The RealReal for query: {query} across all conditions")
 
         tasks = [
             self.search_by_condition(query, category, product_id, image_query, search_query, code, label)
@@ -69,7 +69,7 @@ class RealRealScraper:
 
     async def search_by_condition(self, query, category, product_id, image_query, search_query, condition_code, condition_label):
         url = f"https://www.therealreal.com/products?keywords={quote(query)}&condition%5B%5D={condition_code}"
-        self.logger.info(f"🔍 Scraping RealReal: {condition_label} items for '{query}'")
+        self.logger.info(f"[RealReal] 🔍 Scraping RealReal: {condition_label} items for '{query}'")
 
         try:
             resp = await self.scrape_with_retries(ScrapeConfig(
@@ -85,7 +85,7 @@ class RealRealScraper:
                 retry=False
             ))
         except Exception as e:
-            self.logger.error(f"❌ RealReal scrape failed for condition {condition_label}: {e}")
+            self.logger.error(f"[RealReal] ❌ RealReal scrape failed for condition {condition_label}: {e}")
             return []
 
         html = resp.scrape_result.get("content", "")
@@ -154,12 +154,12 @@ class RealRealScraper:
                 # self.insert_or_update_product(item, category)
 
             except Exception as e:
-                self.logger.warning(f"⚠️ Skipping item due to parse error: {e}")
+                self.logger.warning(f"[RealReal] ⚠️ Skipping item due to parse error: {e}")
         
         if results:
             await self.batch_insert_products(results, category)
 
-        self.logger.info(f"✅ {condition_label}: {len(results)} items scraped for '{query}'")
+        self.logger.info(f"[RealReal] ✅ {condition_label}: {len(results)} items scraped for '{query}'")
         return results
 
 
@@ -172,4 +172,4 @@ class RealRealScraper:
             for item in items:
                 product = ProductModel(item, category)
                 batch.put_item(Item=product.to_dict())
-        self.logger.info(f"✅ Inserted batch of {len(items)} items. REALREAL")  
+        self.logger.info(f"[RealReal] ✅ Inserted batch of {len(items)} items. REALREAL")  
