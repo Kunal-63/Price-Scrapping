@@ -44,7 +44,7 @@ class EbayScraper:
     @backoff.on_exception(
         backoff.expo,
         ScrapflyScrapeError,
-        max_tries=4,
+        max_tries=2,
         giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)
     )
     async def scrape_with_retries(self, config):
@@ -206,6 +206,7 @@ class EbayScraper:
                 self.logger.exception(f"❌ Error parsing item: {e}")
 
     def bulk_insert_products(self, items: list):
+        self.logger.info("INSERTING IN EBAY")
         if not items:
             return
 

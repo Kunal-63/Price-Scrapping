@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import re
+import time
 from urllib.parse import quote
 
 from scrapfly import ScrapflyClient, ScrapeConfig
@@ -79,15 +80,18 @@ class ProductSearchEngine:
         logger.info(f"Final Search Query: {final_query}")
 
         async def fetch(scraper, name):
+            start = time.time()
+            logger.info(f"🚀 Starting {name} scraper...")
             try:
                 result = await scraper.search(query, category, product_id, image_query, final_query)
+                duration = time.time() - start
                 if isinstance(result, dict) and "active" in result:
-                    logger.info(f"{name} Results: {len(result['active'])} active, {len(result['sold'])} sold")
+                    logger.info(f"✅ {name} done in {duration:.2f}s — {len(result['active'])} active, {len(result['sold'])} sold")
                 else:
-                    logger.info(f"{name} Results: {len(result)} items found")
+                    logger.info(f"✅ {name} done in {duration:.2f}s — {len(result)} items")
                 return result
             except Exception as e:
-                logger.error(f"Error fetching from {name}: {e}")
+                logger.error(f"❌ Error fetching from {name}: {e}")
                 return {"active": [], "sold": []} if name == "eBay" else []
 
         tasks = [

@@ -31,7 +31,7 @@ class Chrono24Scraper:
     @backoff.on_exception(
         backoff.expo,
         ScrapflyScrapeError,
-        max_tries=4,
+        max_tries=2,
         giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)
     )
     async def scrape_with_retries(self, config):
@@ -173,6 +173,7 @@ class Chrono24Scraper:
                 with self.product_table.batch_writer(overwrite_by_pkeys=["url"]) as writer:
                     for item in batch:
                         writer.put_item(Item=item)
+                        self.logger.info(f"Inserting... {item}")
                 self.logger.info(f"✅ Inserted batch of {len(batch)} items.")
             except Exception as e:
                 self.logger.exception(f"❌ Batch insert failed: {e}")

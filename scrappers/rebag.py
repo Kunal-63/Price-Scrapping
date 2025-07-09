@@ -51,7 +51,7 @@ class RebagScraper:
     @backoff.on_exception(
         backoff.expo,
         ScrapflyScrapeError,
-        max_tries=4,
+        max_tries=2,
         giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)  # retry only if it's timeout
     )
     async def scrape_with_retries(self, config):
