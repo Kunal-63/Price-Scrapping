@@ -117,10 +117,10 @@ class GrailedScraper:
 
                 # Attempt to extract size (fallback to Gemini/Anthropic if needed)
                 size_match = re.search(r"Size\s*([A-Za-z0-9./]+)", title, re.IGNORECASE)
-                size = size_match.group(1).strip() if size_match else self.anthropic_refiner.extract_size_from_title(title)
+                size = size_match.group(1).strip() if size_match else self.anthropic_refiner.extract_size_from_title(combined_title)
                 size = Utility.refine_us_size_string(size)
 
-                location = Utility.extract_location_from_title(title=title)
+                location = Utility.extract_location_from_title(title=combined_title)
 
                 if(condition_code == "is_gently_used"):
                     condition_label = "Like New"

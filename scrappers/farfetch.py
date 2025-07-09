@@ -105,7 +105,7 @@ class FarfetchScraper:
                 else:
                     condition = "Varies"
 
-                location = Utility.extract_location_from_title(title=title)
+                location = Utility.extract_location_from_title(title=combined_title)
 
                 result = {
                     "product_id": product_id,
