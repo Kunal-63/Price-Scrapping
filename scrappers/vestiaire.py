@@ -80,7 +80,7 @@ class VestiaireScraper:
                 session=Utility.generate_random_session(),
                 session_sticky_proxy=True,
                 retry=False,
-                timeout=120000
+                timeout=60000
             ))
 
             xhr_calls = page_resp.scrape_result["browser_data"]["xhr_call"]
@@ -115,7 +115,7 @@ class VestiaireScraper:
                     session=Utility.generate_random_session(),
                     session_sticky_proxy=True,
                     asp=True,
-                    timeout=120000,
+                    timeout=60000,
                     retry=False
                 ))
 

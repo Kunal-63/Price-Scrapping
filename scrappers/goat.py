@@ -34,7 +34,7 @@ class GoatScraper:
                 wait_for_selector="script#__NEXT_DATA__",
                 session="random",
                 retry=False,
-                timeout=120000,
+                timeout=60000,
                 country="US"
             ))
         except Exception as e:
@@ -97,7 +97,7 @@ class GoatScraper:
                 wait_for_selector="script#__NEXT_DATA__",
                 session="random-detail",
                 retry=False,
-                timeout=120000,
+                timeout=60000,
                 country="US"
             ))
         except Exception as e:

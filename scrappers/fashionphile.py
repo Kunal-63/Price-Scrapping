@@ -81,7 +81,7 @@ class FashionphileScraper:
                 session=Utility.generate_random_session(),
                 proxy_pool="public_residential_pool",
                 retry=False,
-                timeout=120000,
+                timeout=60000,
                 country="US"
             ))
         except Exception as e:

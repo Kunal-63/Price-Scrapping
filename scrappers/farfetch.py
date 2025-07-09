@@ -54,7 +54,7 @@ class FarfetchScraper:
                 country="US",
                 session=Utility.generate_random_session(),
                 retry=False,
-                timeout=120000
+                timeout=60000
             ))
         except Exception as e:
             self.logger.exception(f"❌ Failed to fetch Farfetch listings: {e}")

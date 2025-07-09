@@ -71,7 +71,7 @@ class RebagScraper:
                 wait_for_selector="div.plp__product",
                 session=Utility.generate_random_session(),
                 retry=False,
-                timeout=120000,
+                timeout=60000,
                 country="US"
             ))
         except Exception as e:

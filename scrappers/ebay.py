@@ -69,7 +69,7 @@ class EbayScraper:
                 wait_for_selector=".s-item__title",
                 session=Utility.generate_random_session(),
                 retry=False,
-                timeout=120000,
+                timeout=60000,
                 country="US",
             )
             for url in urls
@@ -127,7 +127,7 @@ class EbayScraper:
                 wait_for_selector=".s-item__title",
                 session=Utility.generate_random_session(),
                 retry=False,
-                timeout=120000,
+                timeout=60000,
                 country="US",
             ))
         except Exception as e:

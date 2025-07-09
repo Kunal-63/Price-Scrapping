@@ -21,7 +21,7 @@ class FlightClubScraper:
                 wait_for_selector="script",
                 session="random",
                 retry=False,
-                timeout=120000,
+                timeout=60000,
                 country="US"
             ))
         except Exception as e:

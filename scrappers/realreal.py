@@ -81,7 +81,7 @@ class RealRealScraper:
                 session=Utility.generate_random_session(),
                 country="US",
                 proxy_pool="public_residential_pool",
-                timeout=120000,
+                timeout=60000,
                 retry=False
             ))
         except Exception as e:

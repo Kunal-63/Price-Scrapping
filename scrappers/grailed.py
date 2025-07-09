@@ -72,7 +72,7 @@ class GrailedScraper:
                 country="US",
                 session=Utility.generate_random_session(),
                 retry=False,
-                timeout=120000
+                timeout=60000
             ))
         except Exception as e:
             self.logger.error(f"❌ Failed to scrape {condition_label}: {e}")
