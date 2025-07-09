@@ -13,7 +13,6 @@ class AnthropicRefiner:
         # Use whichever Claude model suits your needs
         self.model = "claude-3-5-sonnet-20240620"
 
-    @backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=2)
     def call_claude(self, prompt, max_tokens=1024, temperature=0.0):
         try:
             resp = self.client.messages.create(
