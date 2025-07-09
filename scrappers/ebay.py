@@ -163,6 +163,9 @@ class EbayScraper:
 
                 link_el = item.select_one("a.s-item__link")
                 price_el = item.select_one(".s-item__price")
+                if not price_el:
+                    self.logger.warning("[eBay] ⚠️ Skipping item due to missing price.")
+                    return
 
                 if not link_el:
                     return
