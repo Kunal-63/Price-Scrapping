@@ -31,6 +31,14 @@ class VestiaireScraper:
         self.anthropic_refiner = AnthropicRefiner()
         self.semaphore = asyncio.Semaphore(10)
 
+        self.condition_map = {
+            "1": "Never worn, with tag",
+            "2": "Never worn",
+            "3": "Good condition",
+            "4": "Fair condition",
+            "5": "Very good condition"
+        }
+
     @backoff.on_exception(
         backoff.expo,
         ScrapflyScrapeError,
@@ -41,14 +49,28 @@ class VestiaireScraper:
         self.logger.debug(f"⏳ Scraping URL: {config.url}")
         async with self.semaphore:
             return await self.client.async_scrape(config)
-
+        
     async def search(self, query, category, product_id, image_query, search_query):
-        url = f"https://us.vestiairecollective.com/search/?q={quote(query)}"
+        self.logger.info(f"🔍 Searching Vestiaire for: {query} across all conditions")
+
+        tasks = [
+            self.search_by_condition(query, category, product_id, image_query, search_query, code, label)
+            for code, label in self.condition_map.items()
+        ]
+
+        all_results = await asyncio.gather(*tasks)
+        flat_results = [item for sublist in all_results for item in sublist]
+        return flat_results
+
+
+    async def search_by_condition(self, query, category, product_id, image_query, search_query, condition_code, condition_label):
+        url = f"https://us.vestiairecollective.com/search/?q={quote(query)}#condition={quote(condition_label)}%23{condition_code}"
+        self.logger.info(f"🔍 Scraping Vestiaire: {condition_label} items for '{query}'")
+
         results = []
 
         try:
-            self.logger.info(f"🔍 Searching Vestiaire for: {query}")
-            first_page = await self.scrape_with_retries(ScrapeConfig(
+            page_resp = await self.scrape_with_retries(ScrapeConfig(
                 url=url,
                 asp=True,
                 render_js=True,
@@ -61,7 +83,7 @@ class VestiaireScraper:
                 timeout=120000
             ))
 
-            xhr_calls = first_page.scrape_result["browser_data"]["xhr_call"]
+            xhr_calls = page_resp.scrape_result["browser_data"]["xhr_call"]
             search_call = next((call for call in xhr_calls if "product/search" in call["url"]), None)
             if not search_call:
                 self.logger.warning("❌ Couldn't find the product search API call.")
@@ -104,19 +126,21 @@ class VestiaireScraper:
             for item in results_raw:
                 try:
                     product_url = f"https://www.vestiairecollective.com{item.get('link', '')}"
-                    raw_price = item.get("price", {}).get("amount")
+                    raw_price = item.get("price", {}).get("cents")
                     currency = item.get("price", {}).get("currency", "USD")
-                    parsed_price = Price.fromstring(str(raw_price))
-                    condition = self.anthropic_refiner.extract_condition_from_title(title=item.get('description', ''))
-                    size = self.anthropic_refiner.extract_size_from_title(title=item.get('description', ''))
+                    parsed_price = round(raw_price / 100, 2) if raw_price is not None else None
+                    size = item.get('size', {}).get('label', '')
 
-                    results.append({
+                    location = item.get('location', '')
+                    location = self.anthropic_refiner.refine_location(location=location)
+
+                    result = {
                         "title": f"{item.get('brand', {}).get('name', '')} {item.get('title', '')}".strip(),
-                        "listing_price": str(parsed_price.amount) if parsed_price.amount else str(raw_price),
-                        "currency": parsed_price.currency or currency,
+                        "listing_price": parsed_price,
+                        "currency": currency,
                         "url": product_url,
                         "image_url": item.get("images", [{}])[0].get("url"),
-                        "condition": condition,
+                        "condition": condition_label,
                         "seller": item.get('seller', '').get('firstname', ''),
                         "shipping": "Varies",
                         "location": item.get("seller", {}).get("location", {}).get("country", "Unknown"),
@@ -127,20 +151,21 @@ class VestiaireScraper:
                         "image_query": image_query,
                         "search_query": search_query,
                         "size": size
-                    })
+                    }
+
+                    results.append(result)
+                    self.insert_or_update_product(result, category)
 
                 except Exception as e:
                     self.logger.warning(f"⚠️ Skipping item due to parse error: {e}")
 
-            self.logger.info(f"🎯 Total detailed results from Vestiaire: {len(results)}")
-            for item in results:
-                self.insert_or_update_product(item, category)
-            self.logger.info(f"✅ Vestiaire scraping completed: {len(results)} items found")
+            self.logger.info(f"📦 {condition_label}: {len(results)} items scraped from Vestiaire for '{query}'")
             return results
 
         except Exception as e:
-            self.logger.exception(f"❌ Vestiaire scraping failed: {e}")
+            self.logger.exception(f"❌ Vestiaire scraping failed for condition {condition_label}")
             return []
+
 
     def insert_or_update_product(self, base_data: dict, category: str):
         existing = self.product_table.scan(

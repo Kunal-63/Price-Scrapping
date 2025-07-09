@@ -123,8 +123,10 @@ class Chrono24Scraper:
                                     else offer.get("image")
                                 )
 
+                                location = self.anthropic_refiner.extract_location_from_title(title=title)
+
                                 base_data = {
-                                    "product_id": product_id or str(uuid.uuid4()),
+                                    "product_id": product_id,
                                     "title": title,
                                     "listing_price": price,
                                     "url": item_url,
@@ -132,7 +134,7 @@ class Chrono24Scraper:
                                     "condition": condition.capitalize(),
                                     "seller": offer.get("seller", {}).get("name", "Unknown"),
                                     "shipping": "Varies",
-                                    "location": "Unknown",
+                                    "location": location,
                                     "top_rated": False,
                                     "source": "chrono24",
                                     "category": category,

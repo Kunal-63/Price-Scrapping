@@ -104,7 +104,7 @@ class ProductSearchEngine:
             ("google_shopping_results", fetch(self.serpapi_searcher, "Google Shopping")),
         ]
 
-        if category == 'watches':
+        if category == 'accessories':
             tasks.extend([
                 ("watchcharts_results", fetch(self.watchcharts, "WatchCharts")),
                 ("chrono24_results", fetch(self.chrono24, "Chrono24")),

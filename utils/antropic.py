@@ -105,11 +105,18 @@ class AnthropicRefiner:
             return "Not present"
 
         prompt = (
-            "Given a product title, extract the size if any. "
-            "Size can be clothing (M, L, etc.), shoes (9 US), electronics (128 GB), etc. "
-            "If none, return 'Not present'. Only the size.\n"
+            "Extract only the size from the following product title. "
+            "Return only the size value with no extra words. "
+            "If no size is found, return exactly: Not present.\n\n"
+            "Examples:\n"
+            "- 'Nike Air Max 90 Shoes Size 9 US' → 9 US\n"
+            "- 'Samsung Galaxy S22 128GB Black' → 128GB\n"
+            "- 'Chanel Medium Classic Flap Bag' → Medium\n"
+            "- 'Gucci T-shirt - Size M' → M\n"
+            "- 'Rolex Submariner Watch' → Not present\n\n"
             f"Product title: {title}\n"
         )
+
         return self.call_claude(prompt).strip() or "Not present"
 
     @lru_cache(maxsize=5000)
@@ -125,3 +132,42 @@ class AnthropicRefiner:
         )
         text = self.call_claude(prompt).strip().capitalize()
         return text if text in {"New", "Used", "Pre‑owned", "Vintage", "Open box", "Unknown"} else "Unknown"
+    
+    def refine_location(self, location: str) -> str:
+        if not location or location.lower() in {"not present", "unknown", "n/a"}:
+            return "Not present"
+
+        prompt = (
+            "You are a geographic standardizer.\n"
+            "Given a raw or informal location, return the most accurate, standardized location name "
+            "(e.g., city, state, country) in a readable format.\n"
+            "Do not add extra explanation. Only return the refined location.\n"
+            "If the input is not a location, return exactly: Not present.\n\n"
+            "Examples:\n"
+            "- 'nyc' → New York City\n"
+            "- 'USA' → United States\n"
+            "- 'delhi india' → Delhi, India\n"
+            "- 'Not present' → Not present\n"
+            "- 'S.F.' → San Francisco\n\n"
+            f"Raw location: {location}"
+        )
+
+        return self.call_claude(prompt).strip() or "Not present"
+    
+    def extract_location_from_title(self, title: str) -> str:
+        if not title:
+            return "Not present"
+
+        prompt = (
+            "Extract the geographic location from the following product title, if any. "
+            "This could be a city, state, country, or region mentioned in the title. "
+            "Return only the location with no extra text. If no location is present, return exactly: Not present.\n\n"
+            "Examples:\n"
+            "- 'Nike Air Max 90 - New York Edition' → New York\n"
+            "- 'Louis Vuitton Bag - Made in France' → France\n"
+            "- 'Vintage Levi's Jeans USA' → USA\n"
+            "- 'Rolex Submariner Watch' → Not present\n\n"
+            f"Product title: {title}\n"
+        )
+
+        return self.call_claude(prompt).strip() or "Not present"

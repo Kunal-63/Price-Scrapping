@@ -27,20 +27,41 @@ class RebagScraper:
         self.semaphore = asyncio.Semaphore(10)
         self.anthropic_refiner = AnthropicRefiner()
 
+        self.condition_map = {
+            "bc-filter-Excellent": "Excellent",
+            "bc-filter-Great": "Great",
+            "bc-filter-Very+Good": "Very Good",
+            "bc-filter-Good": "Good",
+            "bc-filter-Fair": "Fair"
+        }
+
+    async def search(self, query, category, product_id, image_query, search_query):
+        self.logger.info(f"🔍 Searching Rebag for query: {query} across all conditions")
+
+        tasks = [
+            self.search_by_condition(query, category, product_id, image_query, search_query, code, label)
+            for code, label in self.condition_map.items()
+        ]
+
+        all_results = await asyncio.gather(*tasks)
+        flat_results = [item for sublist in all_results for item in sublist]
+        return flat_results
+
+
     @backoff.on_exception(
-    backoff.expo,
-    ScrapflyScrapeError,
-    max_tries=4,
-    giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)  # retry only if it's timeout
-)
+        backoff.expo,
+        ScrapflyScrapeError,
+        max_tries=4,
+        giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)  # retry only if it's timeout
+    )
     async def scrape_with_retries(self, config):
         self.logger.debug(f"⏳ Scraping URL: {config.url}")
         async with self.semaphore:
             return await self.client.async_scrape(config)
 
-    async def search(self, query, category, product_id, image_query, search_query):
-        self.logger.info(f"🔍 Searching Rebag for query: {query}")
-        url = f"https://shop.rebag.com/collections/all?q={quote(query)}"
+    async def search_by_condition(self, query, category, product_id, image_query, search_query, condition_code, condition_label):
+        url = f"https://shop.rebag.com/collections/all?q={quote(query)}&pf_t_condition={condition_code}"
+        self.logger.info(f"🔍 Scraping Rebag {condition_label} items for '{query}'")
 
         try:
             resp = await self.scrape_with_retries(ScrapeConfig(
@@ -54,7 +75,7 @@ class RebagScraper:
                 country="US"
             ))
         except Exception as e:
-            self.logger.exception("❌ Rebag scraping failed")
+            self.logger.exception(f"❌ Rebag scraping failed for condition {condition_label}")
             return []
 
         soup = BeautifulSoup(resp.scrape_result["content"], "html.parser")
@@ -64,7 +85,6 @@ class RebagScraper:
 
         for card in cards:
             try:
-                product_id_val = product_id
                 link_tag = card.select_one("a.plp__card")
                 if not link_tag:
                     continue
@@ -79,36 +99,36 @@ class RebagScraper:
                 brand_tag = card.select_one(".products-carousel__card-designer")
                 brand = brand_tag.text.strip() if brand_tag else "Unknown"
 
+                size, alt_size = "Unknown", None
                 details_tag = card.select_one(".products-carousel__card-condition")
-                condition, size, alt_size = "Unknown", "Unknown", None
                 if details_tag:
                     parts = [p.strip() for p in details_tag.text.split('|')]
-                    if len(parts) > 0: condition = parts[0]
-                    if len(parts) > 1: size = parts[1].replace("Size", "").strip()
-                    if len(parts) > 2: alt_size = parts[2]
+                    if len(parts) > 1:
+                        size = parts[1].replace("Size", "").strip()
+                    if len(parts) > 2:
+                        alt_size = parts[2]
 
-                if not condition:
-                    condition = self.anthropic_refiner.extract_condition_from_title(title=title)
-
-                if not size:
-                    size = self.anthropic_refiner.extract_size_from_title(title=title)
+                # Only fallback to Anthropic for size
+                size = size or self.anthropic_refiner.extract_size_from_title(title=title)
 
                 price_tag = card.select_one(".rewards-plus-plp__product-price-value")
                 price_text = price_tag.text.strip() if price_tag else "$0"
                 price = Price.fromstring(price_text).amount_float or 0.0
 
+                location = self.anthropic_refiner.extract_location_from_title(title=title)
+
                 base_data = {
-                    "product_id": product_id or product_id_val,
+                    "product_id": product_id,
                     "title": f"{brand} {title}",
                     "listing_price": price,
                     "url": item_url,
                     "image_url": image_url,
-                    "condition": condition,
+                    "condition": condition_label,
                     "size": size,
                     "alt_size": alt_size,
                     "seller": "Rebag",
                     "shipping": "Varies",
-                    "location": "US",
+                    "location": location,
                     "top_rated": False,
                     "source": "rebag",
                     "category": category,
@@ -121,11 +141,10 @@ class RebagScraper:
                 self.insert_or_update_product(base_data, category)
 
             except Exception as e:
-                self.logger.warning(f"\u26a0\ufe0f Failed to parse product: {e}")
+                self.logger.warning(f"⚠️ Failed to parse product: {e}")
 
-        self.logger.info(f"\ud83d\udce6 Parsed {len(results)} products from {url}")
+        self.logger.info(f"📦 Parsed {len(results)} '{condition_label}' products from Rebag")
         return results
-
 
     def insert_or_update_product(self, base_data: dict, category: str):
         existing = self.product_table.scan(

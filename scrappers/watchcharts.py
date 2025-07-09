@@ -109,6 +109,8 @@ class WatchChartsScraper:
                     "Unknown"
                 )
 
+                location = self.anthropic_refiner.extract_location_from_title(title=title)
+
                 base_data = {
                     "title": title,
                     "listing_price": price_value,
@@ -119,7 +121,7 @@ class WatchChartsScraper:
                     "condition": condition,
                     "seller": seller_platform,
                     "shipping": "Varies",
-                    "location": "Unknown",
+                    "location": location,
                     "top_rated": False,
                     "source": "watchcharts",
                     "image_query": image_query,

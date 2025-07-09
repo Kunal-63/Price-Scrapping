@@ -34,6 +34,16 @@ class FashionphileScraper:
         self.semaphore = asyncio.Semaphore(10)
         self.anthropic_refiner = AnthropicRefiner()
 
+        self.condition_map = {
+            "giftable": "Giftable",
+            "new": "New",
+            "excellent": "Excellent",
+            "shows-wear": "Shows Wear",
+            "worn": "Worn",
+            "fair": "Fair",
+            "flawed": "Flawed"
+        }
+
     @backoff.on_exception(
         backoff.expo,
         ScrapflyScrapeError,
@@ -44,10 +54,22 @@ class FashionphileScraper:
         self.logger.debug(f"⏳ Scraping URL: {config.url}")
         async with self.semaphore:
             return await self.client.async_scrape(config)
-
+        
     async def search(self, query, category, product_id, image_query, search_query):
+        self.logger.info(f"🔍 Searching Vestiaire for: {query} across all conditions")
+
+        tasks = [
+            self.search_by_condition(query, category, product_id, image_query, search_query, code, label)
+            for code, label in self.condition_map.items()
+        ]
+
+        all_results = await asyncio.gather(*tasks)
+        flat_results = [item for sublist in all_results for item in sublist]
+        return flat_results
+
+    async def search_by_condition(self, query, category, product_id, image_query, search_query, condition_code, condition_label):
         self.logger.info(f"🔍 Searching Fashionphile for query: {query}")
-        url = f"https://www.fashionphile.com/shop?search={quote(query)}"
+        url = f"https://www.fashionphile.com/shop?search={quote(query)}&condition={condition_code}"
         try:
             resp = await self.scrape_with_retries(ScrapeConfig(
                 url=url,
@@ -98,15 +120,17 @@ class FashionphileScraper:
 
                 size = self.anthropic_refiner.extract_size_from_title(title=title)
 
+                location = self.anthropic_refiner.extract_location_from_title(title=title)
+
                 base_data = {
                     "title": title,
                     "listing_price": price,
                     "url": url_full,
                     "image_url": image_url,
-                    "condition": condition,
+                    "condition": condition_label,
                     "seller": "Fashionphile Verified",
                     "shipping": "Free Shipping in US",
-                    "location": "US",
+                    "location": location,
                     "top_rated": True,
                     "source": "fashionphile",
                     "image_query": image_query,

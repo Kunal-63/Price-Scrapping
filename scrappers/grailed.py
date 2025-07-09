@@ -34,10 +34,33 @@ class GrailedScraper:
     async def scrape_with_retries(self, config):
         async with self.semaphore:
             return await self.client.async_scrape(config)
-
+        
     async def search(self, query, category, product_id, image_query, search_query):
-        self.logger.info(f"🔍 Searching Grailed for query: {query}")
-        url = f"https://www.grailed.com/shop?query={quote(query)}"
+        self.logger.info(f"🔍 Searching Grailed for query: {query} across all conditions")
+
+        # Define all condition filters
+        condition_filters = {
+            "is_new": "New",
+            "is_gently_used": "Gently Used",
+            "is_used": "Used",
+            "is_worn": "Worn",
+            "is_not_specified": "Not Specified"
+        }
+
+        # Launch concurrent tasks for each condition
+        tasks = [
+            self.search_by_condition(query, category, product_id, image_query, search_query, condition_code, condition_label)
+            for condition_code, condition_label in condition_filters.items()
+        ]
+
+        results = await asyncio.gather(*tasks)
+        flat_results = [item for sublist in results for item in sublist]
+        return flat_results
+
+    async def search_by_condition(self, query, category, product_id, image_query, search_query, condition_code, condition_label):
+        url = f"https://www.grailed.com/shop?query={quote(query)}&condition={quote(condition_code)}"
+        self.logger.info(f"🔍 Scraping: {condition_label} items for {query}")
+
         try:
             resp = await self.scrape_with_retries(ScrapeConfig(
                 url=url,
@@ -50,13 +73,13 @@ class GrailedScraper:
                 timeout=120000
             ))
         except Exception as e:
-            self.logger.error(f"❌ Grailed scrape failed: {e}")
+            self.logger.error(f"❌ Failed to scrape {condition_label}: {e}")
             return []
 
         html = resp.scrape_result.get("content", "")
         soup = BeautifulSoup(html, "html.parser")
         items = soup.select("div.UserItem_root__8Q2R_")
-        self.logger.info(f"🔍 Found {len(items)} items on Grailed")
+        self.logger.info(f"✅ {len(items)} {condition_label} items found")
 
         results = []
         for item in items:
@@ -90,16 +113,13 @@ class GrailedScraper:
                 image_url = "https:" + image_el["src"] if image_el and image_el.has_attr("src") else ""
                 full_url = f"https://www.grailed.com{href}"
 
-                # Attempt to extract size (fallback to Gemini if needed)
+                # Attempt to extract size (fallback to Gemini/Anthropic if needed)
                 size_match = re.search(r"Size\s*([A-Za-z0-9./]+)", title, re.IGNORECASE)
-                size = size_match.group(1).strip() if size_match else None
+                size = size_match.group(1).strip() if size_match else self.anthropic_refiner.extract_size_from_title(title)
 
-                if not size:
-                    size = self.anthropic_refiner.extract_size_from_title(title=title)
+                location = self.anthropic_refiner.extract_location_from_title(title=title)
 
-                condition = self.anthropic_refiner.extract_condition_from_title(title=title)
-
-                results.append({
+                result = {
                     "title": combined_title,
                     "listing_price": listing_price,
                     "original_price": original_price,
@@ -107,10 +127,10 @@ class GrailedScraper:
                     "currency": 'USD' if currency == '$' else currency,
                     "url": full_url,
                     "image_url": image_url,
-                    "condition": condition,
+                    "condition": condition_label,
                     "seller": "Grailed Seller",
                     "shipping": "Varies",
-                    "location": "US",
+                    "location": location,
                     "top_rated": False,
                     "source": "grailed",
                     "product_id": product_id,
@@ -119,14 +139,13 @@ class GrailedScraper:
                     "search_query": search_query,
                     "size": size,
                     "bid_count": "0"
-                })
+                }
+
+                results.append(result)
+                self.insert_or_update_product(result, category)
             except Exception as e:
                 self.logger.warning(f"⚠️ Error parsing item: {e}")
 
-        for item in results:
-            self.insert_or_update_product(item, category)
-
-        self.logger.info(f"✅ Grailed scraping completed: {len(results)} items found")
         return results
 
     def insert_or_update_product(self, base_data: dict, category: str):

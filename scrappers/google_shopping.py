@@ -70,6 +70,8 @@ class GoogleShoppingScraper:
                         if not (title and price and link):
                             continue
 
+                        location = item.get('location', '')
+
                         base_data = {
                             "title": title,
                             "product_id": product_id,
@@ -80,7 +82,7 @@ class GoogleShoppingScraper:
                             "condition": "New",
                             "seller": seller,
                             "shipping": "Varies",
-                            "location": "Unknown",
+                            "location": location,
                             "top_rated": False,
                             "source": "google_shopping",
                             "category": category,

@@ -94,6 +94,8 @@ class FarfetchScraper:
 
                 condition = self.anthropic_refiner.extract_condition_from_title(title=title)
 
+                location = self.anthropic_refiner.extract_location_from_title(title=title)
+
                 result = {
                     "product_id": product_id,
                     "title": combined_title,
@@ -106,7 +108,7 @@ class FarfetchScraper:
                     "condition": condition,
                     "seller": "Farfetch",
                     "shipping": "Varies by region",
-                    "location": "Global",
+                    "location": location,
                     "top_rated": True,
                     "source": "farfetch",
                     "image_query": image_query,

@@ -157,6 +157,8 @@ class EbayScraper:
                 detail_url = link_el['href']
                 size = self.anthropic_refiner.extract_size_from_title(title_text)
 
+                location = self.anthropic_refiner.refine_location(item.select_one(".s-item__location").text.strip() if item.select_one(".s-item__location") else "Not specified")
+
                 base_data = {
                     "title": title_text,
                     "product_id": product_id or str(np.random.randint(100000, 999999)),
@@ -164,7 +166,7 @@ class EbayScraper:
                     "url": detail_url,
                     "condition": item.select_one(".SECONDARY_INFO").text.strip() if item.select_one(".SECONDARY_INFO") else "Unknown",
                     "seller": (item.select_one(".s-item__seller-info-text") or item.select_one(".s-item__subtitle")).text.replace("Seller:", "").strip() if (item.select_one(".s-item__seller-info-text") or item.select_one(".s-item__subtitle")) else "Unknown",
-                    "location": item.select_one(".s-item__location").text.strip() if item.select_one(".s-item__location") else "Not specified",
+                    "location": location,
                     "top_rated": bool(item.select_one(".s-item__etrs-text")),
                     "source": 'ebay',
                     "image_query": image_query,

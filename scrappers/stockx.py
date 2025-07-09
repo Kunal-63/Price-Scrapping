@@ -77,6 +77,8 @@ class StockXScraper:
                 image_url = image_el["src"] if image_el else None
                 size = self.anthropic_refiner.extract_size_from_title(title)
 
+                location = self.anthropic_refiner.extract_location_from_title(title=title)
+
                 base_data = {
                     "title": title,
                     "listing_price": price_value,
@@ -86,7 +88,7 @@ class StockXScraper:
                     "image_url": image_url,
                     "condition": "New",
                     "seller": "StockX Verified",
-                    "location": "US (via StockX)",
+                    "location": location,
                     "top_rated": True,
                     "bid_count": "0",  # not available
                     "source": "stockx",

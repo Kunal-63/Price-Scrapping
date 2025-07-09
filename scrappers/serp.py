@@ -10,6 +10,7 @@ from boto3.dynamodb.conditions import Attr
 from models.product_item import ProductModel
 from price_parser.parser import Price
 import backoff
+from utils.antropic import AnthropicRefiner
 
 
 class SerpAPISearcher:
@@ -25,6 +26,7 @@ class SerpAPISearcher:
         self.clothing_table = dynamodb.Table("ClothingTable")
 
         self.semaphore = asyncio.Semaphore(10)
+        self.anthropic_refiner = AnthropicRefiner()
 
     @backoff.on_exception(backoff.expo, httpx.HTTPError, max_tries=5)
     async def fetch_with_retries(self, url, params=None, headers=None):
@@ -65,6 +67,8 @@ class SerpAPISearcher:
 
                 if not (title and link and raw_price):
                     continue
+                
+                location = self.anthropic_refiner.extract_location_from_title(title=title)
 
                 item = {
                     "title": title,
