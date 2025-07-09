@@ -59,7 +59,7 @@ def create_table_if_not_exists(dynamodb, table_name, key_name, key_type='S'):
         print(f"❌ Error creating table {table_name}: {e}")
 
 if __name__ == "__main__":
-    session = Session(profile_name='auricore-dev-kunal')
+    session = Session()
     dynamodb = session.resource("dynamodb", region_name="us-east-1")
 
     # Create table with product_id as GSI

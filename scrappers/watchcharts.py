@@ -98,18 +98,24 @@ class WatchChartsScraper:
                 if size == "Not present":
                     size = self.anthropic_refiner.extract_size_from_title(title=title)
                 condition = self.anthropic_refiner.extract_condition_from_title(title=title)
+                size = Utility.refine_us_size_string(size)
 
-                
+                if('new' in condition.lower()):
+                    condition = "New"
+                elif('pre' in condition.lower()):
+                    condition = "Good"
+                else:
+                    condition = "Varies"                
                 
                 seller_platform = (
                     "Chrono24" if "chrono24" in meta.lower() else
                     "WatchUSeek" if "watchuseek" in meta.lower() else
                     "Reddit" if "reddit" in meta.lower() else
                     "Forum" if "forum" in meta.lower() else
-                    "Unknown"
+                    "Unknown "
                 )
 
-                location = self.anthropic_refiner.extract_location_from_title(title=title)
+                location = Utility.extract_location_from_title(title=title)
 
                 base_data = {
                     "title": title,

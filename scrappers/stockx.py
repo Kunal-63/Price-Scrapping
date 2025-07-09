@@ -77,8 +77,9 @@ class StockXScraper:
                 url_full = f"https://stockx.com{link_el['href']}"
                 image_url = image_el["src"] if image_el else None
                 size = self.anthropic_refiner.extract_size_from_title(title)
+                size = Utility.refine_us_size_string(size)
 
-                location = self.anthropic_refiner.extract_location_from_title(title=title)
+                location = Utility.extract_location_from_title(title=title)
 
                 base_data = {
                     "title": title,

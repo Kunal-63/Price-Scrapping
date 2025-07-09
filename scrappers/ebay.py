@@ -173,14 +173,23 @@ class EbayScraper:
 
                 detail_url = link_el['href']
                 size = self.anthropic_refiner.extract_size_from_title(title_text)
+                size = Utility.refine_us_size_string(size)
                 location = self.anthropic_refiner.refine_location(item.select_one(".s-item__location").text.strip() if item.select_one(".s-item__location") else "Not specified")
+
+                condition = item.select_one(".SECONDARY_INFO").text.strip() if item.select_one(".SECONDARY_INFO") else "Unknown"
+                if('new' in condition.lower()):
+                    condition = "New"
+                elif('pre' in condition.lower()):
+                    condition = "Good"
+                else:
+                    condition = "Varies"
 
                 base_data = {
                     "title": title_text,
                     "product_id": product_id or str(np.random.randint(100000, 999999)),
                     "listing_price": price_value,
                     "url": detail_url,
-                    "condition": item.select_one(".SECONDARY_INFO").text.strip() if item.select_one(".SECONDARY_INFO") else "Unknown",
+                    "condition": condition,
                     "seller": (item.select_one(".s-item__seller-info-text") or item.select_one(".s-item__subtitle")).text.replace("Seller:", "").strip() if (item.select_one(".s-item__seller-info-text") or item.select_one(".s-item__subtitle")) else "Unknown",
                     "location": location,
                     "top_rated": bool(item.select_one(".s-item__etrs-text")),
@@ -209,16 +218,13 @@ class EbayScraper:
             except Exception as e:
                 self.logger.exception(f"❌ Batch insert failed: {e}")
 
-        # Split into batches of 25
         def chunks(data, size=25):
             for i in range(0, len(data), size):
                 yield data[i:i + size]
 
         batches = list(chunks(items, 25))
 
-        # Submit each batch as a separate thread
         futures = [self.executor.submit(write_batch, batch) for batch in batches]
 
-        # Optionally wait for all threads to complete
         for future in futures:
             future.result()

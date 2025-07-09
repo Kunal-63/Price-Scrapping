@@ -96,7 +96,7 @@ class Chrono24Scraper:
 
         parsed_url = urlparse(url)
         query_params = parse_qs(parsed_url.query)
-        condition = query_params.get("usedOrNew", ["Unknown"])[0]
+        condition = query_params.get("usedOrNew", ["Varies"])[0]
         diameters = query_params.get("caseDiameter", [])
         size = f"{min(map(int, diameters))}mm - {max(map(int, diameters))}mm" if diameters else "Unknown"
 
@@ -125,7 +125,14 @@ class Chrono24Scraper:
                                     else offer.get("image")
                                 )
 
-                                location = self.anthropic_refiner.extract_location_from_title(title=title)
+                                location = Utility.extract_location_from_title(title=title)
+
+                                if(condition.lower() == 'new'):
+                                    condition = 'New'
+                                elif(condition.lower() == 'used'):
+                                    condition = 'Used'
+                                else:
+                                    condition = 'Varies'
 
                                 base_data = {
                                     "product_id": product_id,
@@ -170,16 +177,13 @@ class Chrono24Scraper:
             except Exception as e:
                 self.logger.exception(f"❌ Batch insert failed: {e}")
 
-        # DynamoDB batch size limit
         def chunks(data, size=25):
             for i in range(0, len(data), size):
                 yield data[i:i + size]
 
         batches = list(chunks(items, 25))
 
-        # Dispatch threads
         futures = [self.executor.submit(write_batch, batch) for batch in batches]
 
-        # Wait for all to finish
         for future in futures:
             future.result()

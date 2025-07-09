@@ -50,7 +50,7 @@ class SerpAPISearcher:
                 title = p.get("title")
                 raw_price = p.get("price")
                 link = p.get("product_link")
-                condition = p.get("condition") or "Unknown"
+                condition = p.get("condition") or "Varies"
                 seller = p.get("source") or "Unknown"
                 shipping = (
                     p.get("shipping", {}).get("price") if isinstance(p.get("shipping"), dict)
@@ -59,6 +59,7 @@ class SerpAPISearcher:
                 location = p.get("extracted_location", "Unknown")
                 image_url = p.get("thumbnail")
                 size = p.get("size", "Unknown")
+                size = Utility.refine_us_size_string(size)
                 brand = p.get("brand", "Unknown")
 
                 if not (title and link and raw_price):
@@ -68,13 +69,18 @@ class SerpAPISearcher:
                 price = parsed_price.amount_float if parsed_price and parsed_price.amount_float else None
 
                 # Refine location
-                location = self.anthropic_refiner.extract_location_from_title(title=title)
+                location = Utility.extract_location_from_title(title=title)
+
+                if('new' in condition.lower()):
+                    condition = "New"
+                elif('pre' in condition.lower()):
+                    condition = "Fair"
 
                 item = {
                     "title": title,
                     "listing_price": str(price) if price else None,
                     "url": link,
-                    "condition": condition.capitalize(),
+                    "condition": condition,
                     "seller": seller,
                     "shipping": shipping,
                     "location": location,

@@ -10,7 +10,7 @@ from schemas.product_item import ProductItem
 from sqlalchemy.future import select
 from fuzzywuzzy import fuzz
 import asyncio
-from boto3.dynamodb.conditions import Attr
+from boto3.dynamodb.conditions import Attr, Key
 from utils.product_engine import ProductSearchEngine
 from utils.logger import get_logger
 from boto3.session import Session
@@ -74,12 +74,14 @@ async def search_and_store(input_data: SearchInput):
                 all_items.append(item)
     
     return all_items
+
 @router.post("/get_product/")
 async def fetch_product_by_id(input_data: ProductIdInput):
     try:
         query = input_data.query.strip() if input_data.query else None
         message = ""
-        filter_expr = None
+        items = []
+        last_key = None
 
         def build_multi_field_filter(q: str):
             fields = ["title", "condition", "seller", "location", "category", "source"]
@@ -95,64 +97,92 @@ async def fetch_product_by_id(input_data: ProductIdInput):
             except:
                 return Decimal(0)
 
-        # --- Product ID Filter ---
+        # --- Use GSI query if product_id is specified ---
         if input_data.product_id:
-            filter_expr = Attr("product_id").eq(input_data.product_id)
+            logger.info(f"Using ProductIdIndex query for product_id: {input_data.product_id}")
+            response = product_table.query(
+                IndexName="ProductIdIndex",
+                KeyConditionExpression=Key("product_id").eq(input_data.product_id),
+                Limit=input_data.limit
+            )
+            items = response.get("Items", [])
+            last_key = response.get("LastEvaluatedKey")
 
-        # --- Multi-field query ---
-        if query:
-            query_expr = build_multi_field_filter(query)
-            filter_expr = query_expr if not filter_expr else filter_expr & query_expr
+            # Ignore 'query' to avoid mixing relevance filters
+            if query:
+                logger.warning("Ignoring 'query' parameter when 'product_id' is provided to ensure accuracy.")
 
-        # --- Extra filters ---
-        filters = input_data.filters or {}
-        for key, value in filters.items():
-            if key == "min_price":
-                expr = Attr("listing_price").gte(safe_decimal(value))
-            elif key == "max_price":
-                expr = Attr("listing_price").lte(safe_decimal(value))
-            elif key == "from_date":
-                expr = Attr("created_at").gte(value)
-            elif key == "to_date":
-                expr = Attr("created_at").lte(value)
-            else:
-                try:
-                    value = Decimal(value)
-                except:
-                    pass
-                expr = Attr(key).eq(value)
-            filter_expr = expr if not filter_expr else filter_expr & expr
+            # Apply extra filters in Python
+            filters = input_data.filters or {}
+            def passes_filters(item):
+                for key, value in filters.items():
+                    try:
+                        if key == "min_price" and Decimal(item.get("listing_price", 0)) < safe_decimal(value):
+                            return False
+                        if key == "max_price" and Decimal(item.get("listing_price", 0)) > safe_decimal(value):
+                            return False
+                        if key == "from_date" and item.get("created_at", "") < value:
+                            return False
+                        if key == "to_date" and item.get("created_at", "") > value:
+                            return False
+                        if key not in ["min_price", "max_price", "from_date", "to_date"]:
+                            if str(item.get(key)) != str(value):
+                                return False
+                    except:
+                        continue
+                return True
 
-        # --- Scan arguments ---
-        scan_args = {
-            "Limit": input_data.limit,
-        }
-        if filter_expr:
-            scan_args["FilterExpression"] = filter_expr
-        if input_data.last_evaluated_key:
-            scan_args["ExclusiveStartKey"] = input_data.last_evaluated_key
+            items = list(filter(passes_filters, items))
 
-        # --- Scan DynamoDB ---
-        response = product_table.scan(**scan_args)
-        items = response.get("Items", [])
-        last_key = response.get("LastEvaluatedKey")
+        else:
+            # --- Fuzzy search using scan ---
+            filter_expr = None
+            if query:
+                filter_expr = build_multi_field_filter(query)
 
-        # --- Fallback if no results ---
-        if not items:
-            logger.info("No results matched filter — returning fallback products.")
-            message = "No results matched filter"
-            fallback_response = product_table.scan(Limit=input_data.limit)
-            items = fallback_response.get("Items", [])
-            last_key = fallback_response.get("LastEvaluatedKey")
+            filters = input_data.filters or {}
+            for key, value in filters.items():
+                if key == "min_price":
+                    expr = Attr("listing_price").gte(safe_decimal(value))
+                elif key == "max_price":
+                    expr = Attr("listing_price").lte(safe_decimal(value))
+                elif key == "from_date":
+                    expr = Attr("created_at").gte(value)
+                elif key == "to_date":
+                    expr = Attr("created_at").lte(value)
+                else:
+                    try:
+                        value = Decimal(value)
+                    except:
+                        pass
+                    expr = Attr(key).eq(value)
+                filter_expr = expr if not filter_expr else filter_expr & expr
 
-        # --- Scoring and conversion to ProductModel ---
+            scan_args = {
+                "Limit": input_data.limit,
+            }
+            if filter_expr:
+                scan_args["FilterExpression"] = filter_expr
+            if input_data.last_evaluated_key:
+                scan_args["ExclusiveStartKey"] = input_data.last_evaluated_key
+
+            response = product_table.scan(**scan_args)
+            items = response.get("Items", [])
+            last_key = response.get("LastEvaluatedKey")
+
+            if not items:
+                logger.info("No results matched filter — returning fallback products.")
+                message = "No results matched filter"
+                fallback_response = product_table.scan(Limit=input_data.limit)
+                items = fallback_response.get("Items", [])
+                last_key = fallback_response.get("LastEvaluatedKey")
+
+        # --- Scoring and conversion ---
         results = []
         refiner = AnthropicRefiner()
-
         for item in items:
             product_model = ProductModel(item, item.get("category", "unknown"))
             score = refiner.score_product(product_model.to_dict(), {}, query) if query else 100
-
             results.append({
                 "product": product_model.to_dict(),
                 "score": score
@@ -162,7 +192,7 @@ async def fetch_product_by_id(input_data: ProductIdInput):
         if query:
             results.sort(key=lambda x: x["score"], reverse=True)
 
-        # --- Optional sort by user-specified field ---
+        # --- Optional sort ---
         if input_data.sort_by:
             try:
                 reverse_order = input_data.sort_order.lower() == "desc"
@@ -178,20 +208,18 @@ async def fetch_product_by_id(input_data: ProductIdInput):
             grouped = {}
             for item in results:
                 group_key = item["product"].get(input_data.group_by, "Unknown")
-
                 if input_data.group_by == "created_at" and isinstance(group_key, str):
                     try:
                         group_key = datetime.fromisoformat(group_key.replace("Z", "")).date().isoformat()
                     except Exception as e:
                         logger.warning(f"Invalid created_at format: {group_key} - {e}")
                         group_key = "Invalid Date"
-
                 grouped.setdefault(group_key, []).append(item)
 
             return {
                 "grouped_results": grouped,
                 "last_evaluated_key": last_key,
-                "total_count": sum(len(items) for items in grouped.values()),
+                "total_count": sum(len(g) for g in grouped.values()),
                 "message": message or "Grouped results retrieved successfully"
             }
 

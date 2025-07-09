@@ -117,13 +117,19 @@ class RealRealScraper:
                 price = price_data.amount_float if price_data.amount_float else None
                 image_url = image_tag.get("data-src") if image_tag and image_tag.has_attr("data-src") else None
                 full_url = f"https://www.therealreal.com{link}"
-                size = size_tag.text.strip().replace("Size:", "").strip() if size_tag else None
-
-                
+                size = size_tag.text.strip().replace("Size:", "").strip() if size_tag else None                
                 size = size or self.anthropic_refiner.extract_size_from_title(title=title)
+                size = Utility.refine_us_size_string(size)
 
                 if not location_tag:
-                    location = self.anthropic_refiner.extract_location_from_title(title=title)
+                    location = Utility.extract_location_from_title(title=title)
+
+                if(condition_label == "Pristine"):
+                    condition_label = "Like New"
+                elif(condition_label == "Very Good"):
+                    condition_label = "Good"
+                elif(condition_label == "As Is"):
+                    condition_label = "Fair"
 
                 item = {
                     "title": title,

@@ -110,12 +110,20 @@ class RebagScraper:
 
                 # Only fallback to Anthropic for size
                 size = size or self.anthropic_refiner.extract_size_from_title(title=title)
+                size = Utility.refine_us_size_string(size)
 
                 price_tag = card.select_one(".rewards-plus-plp__product-price-value")
                 price_text = price_tag.text.strip() if price_tag else "$0"
                 price = Price.fromstring(price_text).amount_float or 0.0
 
-                location = self.anthropic_refiner.extract_location_from_title(title=title)
+                location = Utility.extract_location_from_title(title=title)
+
+                if(condition_label == "Great"):
+                    condition_label = "Good"
+                elif(condition_label == "Very Good"):
+                    condition_label = "Good"
+                elif(condition_label == "Good"):
+                    condition_label = "Fair"
 
                 base_data = {
                     "product_id": product_id,

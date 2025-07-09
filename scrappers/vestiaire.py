@@ -34,9 +34,9 @@ class VestiaireScraper:
         self.condition_map = {
             "1": "Never worn, with tag",
             "2": "Never worn",
-            "3": "Good condition",
-            "4": "Fair condition",
-            "5": "Very good condition"
+            "4": "Good condition",
+            "5": "Fair condition",
+            "3": "Very good condition"
         }
 
     @backoff.on_exception(
@@ -130,9 +130,21 @@ class VestiaireScraper:
                     currency = item.get("price", {}).get("currency", "USD")
                     parsed_price = round(raw_price / 100, 2) if raw_price is not None else None
                     size = item.get('size', {}).get('label', '')
+                    size = Utility.refine_us_size_string(size)
 
                     location = item.get('location', '')
                     location = self.anthropic_refiner.refine_location(location=location)
+
+                    if(condition_code == "1"):
+                        condition_label = "New"
+                    elif(condition_code == "2"):
+                        condition_label = "Like New"
+                    elif(condition_code == "3"):
+                        condition_label = "Excellent"
+                    elif(condition_code == "4"):
+                        condition_label = "Good"
+                    elif(condition_code == "5"):
+                        condition_label = "Fair"
 
                     result = {
                         "title": f"{item.get('brand', {}).get('name', '')} {item.get('title', '')}".strip(),

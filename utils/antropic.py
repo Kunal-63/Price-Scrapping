@@ -105,14 +105,19 @@ class AnthropicRefiner:
             return "Not present"
 
         prompt = (
-            "Extract only the size from the following product title. "
-            "Return only the size value with no extra words. "
-            "If no size is found, return exactly: Not present.\n\n"
+            "Extract only the US-based size from the following product title. "
+            "Return only the clean size value — remove any extra words, labels, or descriptors. "
+            "Do NOT include gender labels (like Men's, Women's, Kids), brand names, or non-US sizes (like EU 40, UK 8, IT 50). "
+            "Only return the clean US size value (e.g., 9 US, M, Large, 32x32, etc). If no valid size is found, return exactly: Not present.\n\n"
             "Examples:\n"
             "- 'Nike Air Max 90 Shoes Size 9 US' → 9 US\n"
-            "- 'Samsung Galaxy S22 128GB Black' → 128GB\n"
-            "- 'Chanel Medium Classic Flap Bag' → Medium\n"
             "- 'Gucci T-shirt - Size M' → M\n"
+            "- 'Chanel Medium Classic Flap Bag' → Medium\n"
+            "- 'Versace Gallery Silk Shirt' → Not present\n"
+            "- 'Nike Air Force 1 EU 40 / US 9 Men's' → 9 US\n"
+            "- 'Yeezy Boost 350 V2 UK 8 / US 9 Women's' → 9 US\n"
+            "- 'Polo Shirt Size Large Men's' → Large\n"
+            "- 'Levi’s Jeans 32x32 Men’s' → 32x32\n"
             "- 'Rolex Submariner Watch' → Not present\n\n"
             f"Product title: {title}\n"
         )
@@ -126,12 +131,12 @@ class AnthropicRefiner:
         prompt = (
             "You are an intelligent product metadata extractor. "
             "Given a product title, extract the condition of the product from it. "
-            "Only return one of: 'New', 'Used', "
-            "'Pre‑owned', 'Vintage', 'Open box', or 'Unknown'.\n\n"
+            "Only return one of: 'New', 'Like New', "
+            "'Excellent', 'Good', 'Fair', or 'Varies'.\n\n"
             f"Product title: {title}\n\n"
         )
         text = self.call_claude(prompt).strip().capitalize()
-        return text if text in {"New", "Used", "Pre‑owned", "Vintage", "Open box", "Unknown"} else "Unknown"
+        return text if text in {"New", "Like New", "Excellent", "Good", "Fair", "Varies"} else "Varies"
     
     def refine_location(self, location: str) -> str:
         if not location or location.lower() in {"not present", "unknown", "n/a"}:

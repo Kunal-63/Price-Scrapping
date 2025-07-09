@@ -112,17 +112,18 @@ class FashionphileScraper:
                 url_full = urljoin("https://www.fashionphile.com", link_tag["href"])
                 image_url = image_tag["src"] if image_tag and image_tag.has_attr("src") else None
 
-                # fetch condition from detail page
-                condition = None
-                cond_tag = card.find("p", class_="condition")
-                if cond_tag and "Condition:" in cond_tag.text:
-                    condition = cond_tag.text.replace("Condition:", "").strip()
-                if not condition:
-                    condition = self.anthropic_refiner.extract_condition_from_title(title=title)
+                if(condition_label == "Giftable"):
+                    condition_label = "Like New"
+                elif(condition_label == "Shows Wear"):
+                    condition_label = "Good"
+                elif(condition_label == "Worn" or condition_label == "Flawed"):
+                    condition_label = "Fair"
+
 
                 size = self.anthropic_refiner.extract_size_from_title(title=title)
+                size = Utility.refine_us_size_string(size)
 
-                location = self.anthropic_refiner.extract_location_from_title(title=title)
+                location = Utility.extract_location_from_title(title=title)
 
                 base_data = {
                     "title": title,

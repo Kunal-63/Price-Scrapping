@@ -91,13 +91,21 @@ class FarfetchScraper:
                 # Try to extract size from title
                 size_match = re.search(r'\b(?:Size|EU|US)?\s*([A-Za-z0-9./]+)\b', combined_title)
                 size = size_match.group(1).strip() if size_match else None
+                size = Utility.refine_us_size_string(size)
 
                 if not size:
                     size = self.anthropic_refiner.extract_size_from_title(title=title)
 
                 condition = self.anthropic_refiner.extract_condition_from_title(title=title)
 
-                location = self.anthropic_refiner.extract_location_from_title(title=title)
+                if('new' in condition.lower()):
+                    condition = "New"
+                elif('pre' in condition.lower()):
+                    condition = "Excellent"
+                else:
+                    condition = "Varies"
+
+                location = Utility.extract_location_from_title(title=title)
 
                 result = {
                     "product_id": product_id,
