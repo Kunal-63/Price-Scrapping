@@ -110,7 +110,7 @@ class RealRealScraper:
                 brand = brand_tag.text.strip()
                 name = name_tag.text.strip()
                 title = f"{brand} {name}"
-                if location:
+                if location_tag:
                     location = location_tag.text.strip()
                 price_text = price_tag.text.strip()
                 price_data = Price.fromstring(price_text)

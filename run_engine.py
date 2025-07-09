@@ -8,7 +8,7 @@ dynamodb = session.resource("dynamodb", region_name="us-east-1")
 table_name = "FinalProductsTable"
 table = dynamodb.Table(table_name)
 
-CONCURRENCY = 5
+CONCURRENCY = 7
 
 
 async def process_item(search_engine, item, semaphore):
