@@ -122,7 +122,7 @@ class RealRealScraper:
                 
                 size = size or self.anthropic_refiner.extract_size_from_title(title=title)
 
-                if not location:
+                if not location_tag:
                     location = self.anthropic_refiner.extract_location_from_title(title=title)
 
                 item = {
