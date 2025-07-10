@@ -8,7 +8,6 @@ from rapidfuzz import fuzz
 
 
 _sbert = SentenceTransformer("all-MiniLM-L6-v2")
-_e5 = SentenceTransformer("intfloat/multilingual-e5-large")
 
 class Utility:
     @staticmethod
@@ -146,16 +145,8 @@ class Utility:
             emb2 = _sbert.encode([q], convert_to_tensor=True)
             sem1 = util.cos_sim(emb1, emb2).item()
 
-            emb_e51 = _e5.encode([t], convert_to_tensor=True)
-            emb_e52 = _e5.encode([q], convert_to_tensor=True)
-            sem_e5 = util.cos_sim(emb_e51, emb_e52).item()
-
-            vec = TfidfVectorizer().fit([t, q])
-            tfidf = vec.transform([t, q]).toarray()
-            tfidf_sim = np.dot(tfidf[0], tfidf[1]) / (np.linalg.norm(tfidf[0]) * np.linalg.norm(tfidf[1]) + 1e-8)
-
-            weights = [0.1, 0.4, 0.4, 0.1]
-            scores = [fuzzy_score, sem1, sem_e5, tfidf_sim]
+            weights = [0.4, 0.6]
+            scores = [fuzzy_score, sem1]
             avg_score = sum(w * s for w, s in zip(weights, scores))
 
             return avg_score >= threshold

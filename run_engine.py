@@ -10,7 +10,6 @@ table = dynamodb.Table("FinalProductsTable")
 
 CONCURRENCY = 2
 
-
 async def process_item(search_engine, item, semaphore):
     async with semaphore:
         start = time.time()
@@ -35,19 +34,24 @@ async def process_item(search_engine, item, semaphore):
             print(f"❌ Error processing {item.get('canonical_name')}: {e}")
             return None
 
-
 async def process_top_items():
     search_engine = ProductSearchEngine()
     semaphore = asyncio.Semaphore(CONCURRENCY)
 
-    # Just fetch 4 items
-    response = table.scan(Limit=4)
+    response = table.scan(Limit=2)
     items = response.get("Items", [])
     print(f"🔍 Retrieved {len(items)} items for processing")
 
-    tasks = [asyncio.create_task(process_item(search_engine, item, semaphore)) for item in items]
-    await asyncio.gather(*tasks)
+    first_batch = items[:2]
+    second_batch = items[2:]
 
+    tasks = [asyncio.create_task(process_item(search_engine, item, semaphore)) for item in first_batch]
+
+    await asyncio.sleep(10)
+    print("⏳ Launching second batch after 10 seconds...")
+    tasks += [asyncio.create_task(process_item(search_engine, item, semaphore)) for item in second_batch]
+
+    await asyncio.gather(*tasks)
 
 if __name__ == "__main__":
     asyncio.run(process_top_items())
