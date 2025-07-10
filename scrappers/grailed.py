@@ -72,7 +72,14 @@ class GrailedScraper:
                 country="US",
                 session=Utility.generate_random_session(),
                 retry=False,
-                timeout=60000
+                timeout=60000,
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache',
+                }
             ))
         except Exception as e:
             self.logger.error(f"[Grailed] ❌ Failed to scrape {condition_label}: {e}")
@@ -102,6 +109,8 @@ class GrailedScraper:
                     continue
 
                 title = title_el.text.strip()
+                if not Utility.combined_similarity(title=title, query=query):
+                    continue
                 designer = designer_el.text.strip() if designer_el else ""
                 combined_title = f"{designer} {title}".strip()
 
@@ -117,7 +126,7 @@ class GrailedScraper:
 
                 # Attempt to extract size (fallback to Gemini/Anthropic if needed)
                 size_match = re.search(r"Size\s*([A-Za-z0-9./]+)", title, re.IGNORECASE)
-                size = size_match.group(1).strip() if size_match else self.anthropic_refiner.extract_size_from_title(combined_title)
+                size = size_match.group(1).strip() if size_match else Utility.extract_size_from_title(combined_title)
                 size = Utility.refine_us_size_string(size)
 
                 location = Utility.extract_location_from_title(title=combined_title)

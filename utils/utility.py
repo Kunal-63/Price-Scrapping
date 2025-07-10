@@ -1,5 +1,14 @@
 import re
 import uuid
+import numpy as np
+from rapidfuzz import fuzz
+from sentence_transformers import SentenceTransformer, util
+from sklearn.feature_extraction.text import TfidfVectorizer
+from rapidfuzz import fuzz
+
+
+_sbert = SentenceTransformer("all-MiniLM-L6-v2")
+_e5 = SentenceTransformer("intfloat/multilingual-e5-large")
 
 class Utility:
     @staticmethod
@@ -52,3 +61,104 @@ class Utility:
         size = re.sub(r'\s+', ' ', size).strip()
 
         return size.upper() if size else "Not present"
+    
+    @staticmethod
+    def extract_size_from_title(title: str) -> str:
+        if not title:
+            return "Not present"
+
+        title = title.lower()
+
+        size_patterns = [
+            r'\b(us|uk|eu|jp|it|fr)?[\s\-:]?(size[\s\-:]?)?(\d{1,3}(\.\d)?( ?[ym]?)?)\b',
+            r'\b(xs|s|m|l|xl|xxl|xxxl|2xl|3xl|4xl|extra small|small|medium|large|extra large)\b',
+            r'\b(\d{1,2}(\.\d)?[ ]?(us|uk|eu|jp|it|fr))\b',
+            r'\bw(\d{1,2}) ?l(\d{1,2})\b',
+            r'\b\d{1,3}[ ]?(cm|inches|inch|mm)\b'
+        ]
+
+        for pattern in size_patterns:
+            match = re.search(pattern, title)
+            if match:
+                size_str = match.group().strip()
+                cleaned = re.sub(r'\bsize\b[\s\-:]*', '', size_str, flags=re.IGNORECASE).strip()
+                return Utility.refine_us_size_string(cleaned)
+
+        return "Not present"
+        
+    @staticmethod
+    def extract_condition_from_title(title: str) -> str:
+        if not title:
+            return "Varies"
+
+        title = title.lower()
+        patterns = [
+            (r'\bbrand\s*new\b|\bnew\b', "New"),
+            (r'\blike\s*new\b|\bworn\s*once\b|\bbarely\s*worn\b|\bgently\s*used\b', "Like New"),
+            (r'\bexcellent\b|\b9[\/]?10\b', "Excellent"),
+            (r'\bgood\b|\b8[\/]?10\b|\bminor\s*wear\b', "Good"),
+            (r'\bfair\b|\b6[\/]?10\b|\bvisible\s*wear\b', "Fair"),
+        ]
+        for pattern, condition in patterns:
+            if re.search(pattern, title):
+                return condition
+
+        return "Varies"
+    
+    def refine_location_string(location: str) -> str:
+        if not location:
+            return "US"
+        location = location.lower().strip()
+        patterns = [
+            (r'\b(u\.?s\.?a?|united states( of america)?)\b', 'US'),
+            (r'\b(u\.?k\.?|united kingdom|great britain|england)\b', 'UK'),
+            (r'\b(eu|europe|european union)\b', 'EU'),
+            (r'\bjapan\b', 'Japan'),
+            (r'\bcanada\b', 'Canada'),
+            (r'\baustralia\b', 'Australia'),
+            (r'\bitaly\b', 'Italy'),
+            (r'\bfrance\b', 'France'),
+            (r'\bgermany\b', 'Germany'),
+            (r'\bchina\b', 'China'),
+            (r'\bhong kong\b', 'Hong Kong'),
+            (r'\bswitzerland\b', 'Switzerland'),
+            (r'\bspain\b', 'Spain'),
+            (r'\bnetherlands\b', 'Netherlands'),
+            (r'\buae\b', 'UAE'),
+            (r'\bdubai\b', 'UAE'),
+            (r'\bsingapore\b', 'Singapore'),
+        ]
+        for pattern, standard in patterns:
+            if re.search(pattern, location):
+                return standard
+        return "US"
+    
+    @staticmethod
+    def combined_similarity(title: str, query: str, threshold: float = 0.7) -> bool:
+        try:
+            def clean_text(s: str) -> str:
+                return re.sub(r'[\W_]+', ' ', s.lower()).strip()
+
+            t, q = clean_text(title), clean_text(query)
+            fuzzy_score = fuzz.WRatio(t, q) / 100.0
+
+            emb1 = _sbert.encode([t], convert_to_tensor=True)
+            emb2 = _sbert.encode([q], convert_to_tensor=True)
+            sem1 = util.cos_sim(emb1, emb2).item()
+
+            emb_e51 = _e5.encode([t], convert_to_tensor=True)
+            emb_e52 = _e5.encode([q], convert_to_tensor=True)
+            sem_e5 = util.cos_sim(emb_e51, emb_e52).item()
+
+            vec = TfidfVectorizer().fit([t, q])
+            tfidf = vec.transform([t, q]).toarray()
+            tfidf_sim = np.dot(tfidf[0], tfidf[1]) / (np.linalg.norm(tfidf[0]) * np.linalg.norm(tfidf[1]) + 1e-8)
+
+            weights = [0.1, 0.4, 0.4, 0.1]
+            scores = [fuzzy_score, sem1, sem_e5, tfidf_sim]
+            avg_score = sum(w * s for w, s in zip(weights, scores))
+
+            return avg_score >= threshold
+        except Exception as e:
+            print(f"[combined_similarity] error: {e}")
+            return False

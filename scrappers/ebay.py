@@ -71,6 +71,13 @@ class EbayScraper:
                 retry=False,
                 timeout=60000,
                 country="US",
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache',
+                }
             )
             for url in urls
         ]
@@ -96,7 +103,7 @@ class EbayScraper:
                 items = soup.select(".s-item")
                 for item in items:
                     tasks.append(self._parse_item(
-                        item, sem, product_id, image_query, search_query,
+                        item, sem, product_id, image_query, query,
                         category, listings, products_to_insert
                     ))
             except Exception as e:
@@ -129,6 +136,13 @@ class EbayScraper:
                 retry=False,
                 timeout=60000,
                 country="US",
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache',
+                }
             ))
         except Exception as e:
             self.logger.exception(f"❌ Failed to fetch sold listings: {e}")
@@ -138,7 +152,7 @@ class EbayScraper:
         items = soup.select(".s-item")
 
         tasks = [
-            self._parse_item(item, sem, product_id, image_query, search_query, category, listings, products_to_insert)
+            self._parse_item(item, sem, product_id=product_id, image_query=image_query, search_query=query, category=category, listings=listings, products_to_insert=products_to_insert)
             for item in items
         ]
 
@@ -160,6 +174,9 @@ class EbayScraper:
                 title_text = title_el.get_text(strip=True)
                 if not title_text or title_text.lower().startswith("shop on ebay"):
                     return
+                
+                if not Utility.combined_similarity(title=title_text, query=search_query):
+                    return
 
                 link_el = item.select_one("a.s-item__link")
                 price_el = item.select_one(".s-item__price")
@@ -175,9 +192,9 @@ class EbayScraper:
                 price_value = price_data.amount_float if price_data.amount_float else None
 
                 detail_url = link_el['href']
-                size = self.anthropic_refiner.extract_size_from_title(title_text)
+                size = Utility.extract_size_from_title(title_text)
                 size = Utility.refine_us_size_string(size)
-                location = self.anthropic_refiner.refine_location(item.select_one(".s-item__location").text.strip() if item.select_one(".s-item__location") else "Not specified")
+                location = (item.select_one(".s-item__location").text.strip() if item.select_one(".s-item__location") else "Not specified")
 
                 condition = item.select_one(".SECONDARY_INFO").text.strip() if item.select_one(".SECONDARY_INFO") else "Unknown"
                 if('new' in condition.lower()):

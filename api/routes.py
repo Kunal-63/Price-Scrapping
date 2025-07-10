@@ -1,5 +1,6 @@
 # app/api/search_and_store.py
 from datetime import datetime
+import time
 import boto3
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, HttpUrl
@@ -49,22 +50,29 @@ async def search_and_store(input_data: SearchInput):
         return {"error": "Provide either 'query' or 'image_url'."}
 
     engine = ProductSearchEngine()
+    start_time = time.perf_counter()
+
     try:
-        combined = await engine.search(query=input_data.query, image_url=input_data.image_url, category=input_data.category, product_id=input_data.product_id)
+        combined = await engine.search(
+            query=input_data.query,
+            image_url=input_data.image_url,
+            category=input_data.category,
+            product_id=input_data.product_id,
+        )
     except Exception as e:
         logger.exception("Search failed")
         return {"error": str(e)}
 
     if not combined:
         return {"message": "No results found"}
-    
+
     all_items = []
     for source, items in combined.items():
         print(source, items)
         if source == "query":
             continue
         if source == "ebay_results":
-            for key,value in items.items():
+            for key, value in items.items():
                 for item in value:
                     item["source"] = source.replace("_results", "").replace("_", " ").title()
                     all_items.append(item)
@@ -72,8 +80,15 @@ async def search_and_store(input_data: SearchInput):
             for item in items:
                 item["source"] = source.replace("_results", "").replace("_", " ").title()
                 all_items.append(item)
-    
-    return all_items
+
+    end_time = time.perf_counter()
+    duration = round(end_time - start_time, 2)  # in seconds
+
+    return {
+        "time_taken_seconds": duration,
+        "result_count": len(all_items),
+        "results": all_items
+    }
 
 @router.post("/get_product/")
 async def fetch_product_by_id(input_data: ProductIdInput):

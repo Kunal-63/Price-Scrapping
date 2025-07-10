@@ -55,7 +55,11 @@ class WatchChartsScraper:
                 country="US",
                 retry=True,
                 headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache',
                 }
             ))
 
@@ -63,7 +67,7 @@ class WatchChartsScraper:
             anchors = soup.select("a.card-link[href^='/listing/']")
 
             tasks = [
-                self._process_tile(anchor, category, product_id, image_query, search_query)
+                self._process_tile(anchor, category, product_id, image_query, query)
                 for anchor in anchors
             ]
 
@@ -87,6 +91,10 @@ class WatchChartsScraper:
                 meta_el = anchor.select_one("div.font-sm")
 
                 title = title_el.get_text(strip=True) if title_el else "Unknown"
+
+                if not Utility.combined_similarity(title=title, query=search_query):
+                    return
+
                 if price_el:
                     price_text = price_el.get_text()
                     price_data = Price.fromstring(price_text)
@@ -98,8 +106,8 @@ class WatchChartsScraper:
                 size_el = anchor.select_one("span.badge-light.font-weight-normal.text-secondary")
                 size = size_el.get_text(strip=True) if size_el else "Not present"
                 if size == "Not present":
-                    size = self.anthropic_refiner.extract_size_from_title(title=title)
-                condition = self.anthropic_refiner.extract_condition_from_title(title=title)
+                    size = Utility.extract_size_from_title(title=title)
+                condition = Utility.extract_condition_from_title(title=title)
                 size = Utility.refine_us_size_string(size)
 
                 if('new' in condition.lower()):

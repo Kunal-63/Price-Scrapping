@@ -82,7 +82,14 @@ class RealRealScraper:
                 country="US",
                 proxy_pool="public_residential_pool",
                 timeout=60000,
-                retry=False
+                retry=False,
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache',
+                }
             ))
         except Exception as e:
             self.logger.error(f"[RealReal] ❌ RealReal scrape failed for condition {condition_label}: {e}")
@@ -110,6 +117,8 @@ class RealRealScraper:
                 brand = brand_tag.text.strip()
                 name = name_tag.text.strip()
                 title = f"{brand} {name}"
+                if not Utility.combined_similarity(title=title, query=query):
+                    continue
                 if location_tag:
                     location = location_tag.text.strip()
                 price_text = price_tag.text.strip()
@@ -118,7 +127,7 @@ class RealRealScraper:
                 image_url = image_tag.get("data-src") if image_tag and image_tag.has_attr("data-src") else None
                 full_url = f"https://www.therealreal.com{link}"
                 size = size_tag.text.strip().replace("Size:", "").strip() if size_tag else None                
-                size = size or self.anthropic_refiner.extract_size_from_title(title=title)
+                size = size or Utility.extract_size_from_title(title=title)
                 size = Utility.refine_us_size_string(size)
 
                 if not location_tag:

@@ -80,7 +80,14 @@ class VestiaireScraper:
                 session=Utility.generate_random_session(),
                 session_sticky_proxy=True,
                 retry=False,
-                timeout=60000
+                timeout=60000,
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache',
+                }
             ))
 
             xhr_calls = page_resp.scrape_result["browser_data"]["xhr_call"]
@@ -133,7 +140,7 @@ class VestiaireScraper:
                     size = Utility.refine_us_size_string(size)
 
                     location = item.get('location', '')
-                    location = self.anthropic_refiner.refine_location(location=location)
+                    location = Utility.refine_location_string(location=location)
 
                     if(condition_code == "1"):
                         condition_label = "New"
@@ -146,8 +153,12 @@ class VestiaireScraper:
                     elif(condition_code == "5"):
                         condition_label = "Fair"
 
+                    title = f"{item.get('brand', {}).get('name', '')} {item.get('title', '')}".strip()
+                    if not Utility.combined_similarity(title=title, query=query):
+                        continue
+
                     result = {
-                        "title": f"{item.get('brand', {}).get('name', '')} {item.get('title', '')}".strip(),
+                        "title": title,
                         "listing_price": parsed_price,
                         "currency": currency,
                         "url": product_url,

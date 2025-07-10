@@ -82,7 +82,14 @@ class FashionphileScraper:
                 proxy_pool="public_residential_pool",
                 retry=False,
                 timeout=60000,
-                country="US"
+                country="US",
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache',
+                }
             ))
         except Exception as e:
             self.logger.exception(f"[Fashionphile] ❌ Failed to fetch Fashionphile listings: {e}")
@@ -106,6 +113,8 @@ class FashionphileScraper:
                     continue
 
                 title = f"{brand_tag.text.strip()} {title_tag.text.strip()}"
+                if not Utility.combined_similarity(title=title, query=query):
+                    continue
                 price_text = price_tag.text.strip()
                 price_data = Price.fromstring(price_text)
                 price = price_data.amount_float if price_data.amount_float else None
@@ -120,7 +129,7 @@ class FashionphileScraper:
                     condition_label = "Fair"
 
 
-                size = self.anthropic_refiner.extract_size_from_title(title=title)
+                size = Utility.extract_size_from_title(title=title)
                 size = Utility.refine_us_size_string(size)
 
                 location = Utility.extract_location_from_title(title=title)

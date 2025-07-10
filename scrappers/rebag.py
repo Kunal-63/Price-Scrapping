@@ -72,7 +72,14 @@ class RebagScraper:
                 session=Utility.generate_random_session(),
                 retry=False,
                 timeout=60000,
-                country="US"
+                country="US",
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache',
+                }
             ))
         except Exception as e:
             self.logger.exception(f"[Rebag] ❌ Rebag scraping failed for condition {condition_label}")
@@ -95,6 +102,8 @@ class RebagScraper:
 
                 title_tag = card.select_one(".products-carousel__card-title")
                 title = title_tag.text.strip() if title_tag else "Unknown"
+                if not Utility.combined_similarity(title=title, query=query):
+                    continue
 
                 brand_tag = card.select_one(".products-carousel__card-designer")
                 brand = brand_tag.text.strip() if brand_tag else "Unknown"
@@ -108,8 +117,7 @@ class RebagScraper:
                     if len(parts) > 2:
                         alt_size = parts[2]
 
-                # Only fallback to Anthropic for size
-                size = size or self.anthropic_refiner.extract_size_from_title(title=title)
+                size = size or Utility.extract_size_from_title(title=title)
                 size = Utility.refine_us_size_string(size)
 
                 price_tag = card.select_one(".rewards-plus-plp__product-price-value")

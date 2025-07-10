@@ -54,7 +54,14 @@ class FarfetchScraper:
                 country="US",
                 session=Utility.generate_random_session(),
                 retry=False,
-                timeout=60000
+                timeout=60000,
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache',
+                }
             ))
         except Exception as e:
             self.logger.exception(f"[Farfetch] ❌ Failed to fetch Farfetch listings: {e}")
@@ -70,6 +77,8 @@ class FarfetchScraper:
             try:
                 brand = item.select_one("p[data-component='ProductCardBrandName']")
                 title = item.select_one("p[data-component='ProductCardDescription']")
+                if not Utility.combined_similarity(title=title.text.strip(), query=query):
+                    continue
                 price_el = item.select_one("p[data-component='PriceFinal']")
                 link_tag = item.select_one("a[data-component='ProductCardLink']")
                 image_tag = item.select_one("link[itemprop='image']")
@@ -94,9 +103,9 @@ class FarfetchScraper:
                 size = Utility.refine_us_size_string(size)
 
                 if not size:
-                    size = self.anthropic_refiner.extract_size_from_title(title=title)
+                    size = Utility.extract_size_from_title(title=title)
 
-                condition = self.anthropic_refiner.extract_condition_from_title(title=title)
+                condition = Utility.extract_condition_from_title(title=combined_title)
 
                 if('new' in condition.lower()):
                     condition = "New"

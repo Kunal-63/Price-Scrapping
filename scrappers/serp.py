@@ -48,6 +48,8 @@ class SerpAPISearcher:
 
             for p in products:
                 title = p.get("title")
+                if not Utility.combined_similarity(title=title, query=query):
+                    continue
                 raw_price = p.get("price")
                 link = p.get("product_link")
                 condition = p.get("condition") or "Varies"
