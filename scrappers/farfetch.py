@@ -48,13 +48,10 @@ class FarfetchScraper:
         try:
             resp = await self.scrape_with_retries(ScrapeConfig(
                 url=url,
-                asp=True,
-                render_js=True,
-                wait_for_selector="article[data-testid='product-card']",
                 country="US",
                 session=Utility.generate_random_session(),
                 retry=False,
-                timeout=60000,
+                timeout=15000,
                 headers={
                     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -77,11 +74,15 @@ class FarfetchScraper:
             try:
                 brand = item.select_one("p[data-component='ProductCardBrandName']")
                 title = item.select_one("p[data-component='ProductCardDescription']")
-                if not Utility.combined_similarity(title=title.text.strip(), query=query):
+
+                if not Utility.combined_similarity(title=title.text.strip(), query=query, threshold=0):
                     continue
+
                 price_el = item.select_one("p[data-component='PriceFinal']")
                 link_tag = item.select_one("a[data-component='ProductCardLink']")
                 image_tag = item.select_one("link[itemprop='image']")
+
+                condition_tag = item.select_one("p[data-component='LabelPrimary']")
 
                 if not (brand and title and price_el and link_tag):
                     continue
@@ -105,14 +106,14 @@ class FarfetchScraper:
                 if not size:
                     size = Utility.extract_size_from_title(title=title)
 
-                condition = Utility.extract_condition_from_title(title=combined_title)
+                condition = condition_tag.text.strip() if condition_tag else "New"
 
-                if('new' in condition.lower()):
-                    condition = "New"
+                if('vintage' in condition.lower()):
+                    condition = "Excellent"
                 elif('pre' in condition.lower()):
                     condition = "Excellent"
                 else:
-                    condition = "Varies"
+                    condition = "New"
 
                 location = Utility.extract_location_from_title(title=combined_title)
 
@@ -162,7 +163,6 @@ class FarfetchScraper:
             except Exception as e:
                 self.logger.exception(f"[Farfetch] ❌ Batch insert failed: {e}")
 
-        # Split into chunks of 25
         def chunks(data, size=25):
             for i in range(0, len(data), size):
                 yield data[i:i + size]
@@ -170,7 +170,6 @@ class FarfetchScraper:
         batches = list(chunks(items, 25))
         futures = [self.executor.submit(write_batch, batch) for batch in batches]
 
-        # Optional: wait for all threads to finish
         for f in futures:
             f.result()
 

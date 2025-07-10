@@ -44,10 +44,8 @@ class StockXScraper:
         try:
             resp = await self.scrape_with_retries(ScrapeConfig(
                 url=url,
-                asp=True,
-                render_js=True,
-                wait_for_selector='div[data-testid="Results"]',
-                auto_scroll=True,
+                retry=False,
+                timeout=15000,
                 country="US",
                 session=Utility.generate_random_session(),
                 proxy_pool="public_residential_pool",
@@ -64,7 +62,7 @@ class StockXScraper:
             soup = BeautifulSoup(html, "html.parser")
 
             results = []
-            for tile in soup.select('div[data-testid="ProductTile"]'):
+            for tile in soup.select('div[data-testid="ProductTile"]')[::5]:
                 title_el = tile.select_one('[data-testid="product-tile-title"]')
                 price_el = tile.select_one('[data-testid="product-tile-lowest-ask-amount"]')
                 link_el = tile.select_one('a[data-testid="productTile-ProductSwitcherLink"]')
@@ -74,7 +72,7 @@ class StockXScraper:
                     continue
 
                 title = title_el.text.strip()
-                if not Utility.combined_similarity(title=title, query=query):
+                if not Utility.combined_similarity(title=title, query=query, threshold=0.7):
                     continue
                 
                 price_text = price_el.text.strip()

@@ -91,39 +91,50 @@ class ProductSearchEngine:
                 logger.error(f"Error fetching from {name}: {e}")
                 return {"active": [], "sold": []} if name == "eBay" else []
 
-        results = await asyncio.gather(
+        async def dummy():
+            return []
+
+        tasks = [
             fetch(self.ebay_scraper, "eBay"),
             fetch(self.stockx_scraper, "StockX"),
-            # fetch(self.goat_scraper, "Goat"),
-            # fetch(self.flightclub, "Flight Club"),
-            fetch(self.watchcharts, "WatchCharts"),
-            fetch(self.chrono24, "Chrono24"),
+        ]
+
+        if category and category.lower() == "watches":
+            tasks.append(fetch(self.watchcharts, "WatchCharts"))
+            tasks.append(fetch(self.chrono24, "Chrono24"))
+        else:
+            tasks.append(dummy())
+            tasks.append(dummy())
+
+        tasks.extend([
             fetch(self.fashionphile, "Fashionphile"),
-            fetch(self.realreal, "The RealReal"),
+            # fetch(self.realreal, "The RealReal"),
             fetch(self.rebag, "Rebag"),
             fetch(self.vestiaire, "Vestiaire"),
             fetch(self.grailed, "Grailed"),
             fetch(self.farfetch, "Farfetch"),
             fetch(self.serpapi_searcher, "Google Shopping"),
-            return_exceptions=True
-        )
+        ])
+
+        tasks = [t if t is not None else dummy() for t in tasks]
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
         combined = {
             "query": final_query,
-            "ebay_results": results[0],
-            "stockx_results": results[1],
-            # "goat_results": results[2],
-            # "flightclub_results": results[3],
-            "watchcharts_results": results[2],
-            "chrono24_results": results[3],
-            "fashionphile_results": results[4],
-            "realreal_results": results[5],
-            "rebag_results": results[6],
-            "vestiaire_results": results[7],
-            "grailed_results": results[8],
-            "farfetch_results": results[9],
-            "google_shopping_results": results[10]
+            "testing": results[0],
+            # "ebay_results": results[0],
+            # "stockx_results": results[1],
+            # "watchcharts_results": results[2],
+            # "chrono24_results": results[3],
+            # "fashionphile_results": results[4],
+            # "realreal_results": results[5],
+            # "rebag_results": results[6],
+            # "vestiaire_results": results[7],
+            # "grailed_results": results[8],
+            # "farfetch_results": results[9],
+            # "google_shopping_results": results[10],
         }
-
+        
         logger.info("Final Combined Results prepared.")
         return combined

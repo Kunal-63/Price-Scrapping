@@ -111,7 +111,7 @@ class Chrono24Scraper:
                                     continue
 
                                 title = offer.get("name", "").strip()
-                                if not Utility.combined_similarity(title=title, query=search_query):
+                                if not Utility.combined_similarity(title=title, query=search_query, threshold=0.7):
                                     continue
                                 price_text = str(offer.get("price", "")).strip()
                                 parsed_price = Price.fromstring(price_text)

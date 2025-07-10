@@ -27,51 +27,30 @@ class RebagScraper:
         self.semaphore = asyncio.Semaphore(10)
         self.anthropic_refiner = AnthropicRefiner()
 
-        self.condition_map = {
-            "bc-filter-Excellent": "Excellent",
-            "bc-filter-Great": "Great",
-            "bc-filter-Very+Good": "Very Good",
-            "bc-filter-Good": "Good",
-            "bc-filter-Fair": "Fair"
-        }
-
-    async def search(self, query, category, product_id, image_query, search_query):
-        self.logger.info(f"[Rebag] 🔍 Searching Rebag for query: {query} across all conditions")
-
-        tasks = [
-            self.search_by_condition(query, category, product_id, image_query, search_query, code, label)
-            for code, label in self.condition_map.items()
-        ]
-
-        all_results = await asyncio.gather(*tasks)
-        flat_results = [item for sublist in all_results for item in sublist]
-        return flat_results
-
-
     @backoff.on_exception(
         backoff.expo,
         ScrapflyScrapeError,
         max_tries=2,
-        giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)  # retry only if it's timeout
+        giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)
     )
     async def scrape_with_retries(self, config):
         self.logger.debug(f"[Rebag] ⏳ Scraping URL: {config.url}")
         async with self.semaphore:
             return await self.client.async_scrape(config)
 
-    async def search_by_condition(self, query, category, product_id, image_query, search_query, condition_code, condition_label):
-        url = f"https://shop.rebag.com/collections/all?q={quote(query)}&pf_t_condition={condition_code}"
-        self.logger.info(f"[Rebag] 🔍 Scraping Rebag {condition_label} items for '{query}'")
+    async def search(self, query, category, product_id, image_query, search_query):
+        url = f"https://shop.rebag.com/collections/all?q={quote(query)}"
+        self.logger.info(f"[Rebag] 🔍 Scraping Rebag {url} items for '{query}'")
 
         try:
             resp = await self.scrape_with_retries(ScrapeConfig(
                 url=url,
-                render_js=True,
-                asp=True,
-                wait_for_selector="div.plp__product",
                 session=Utility.generate_random_session(),
                 retry=False,
-                timeout=60000,
+                timeout=30000,
+                asp=True,
+                render_js=True,
+                wait_for_selector="div.plp__product",
                 country="US",
                 headers={
                     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -82,7 +61,7 @@ class RebagScraper:
                 }
             ))
         except Exception as e:
-            self.logger.exception(f"[Rebag] ❌ Rebag scraping failed for condition {condition_label}")
+            self.logger.exception(f"[Rebag] ❌ Rebag scraping failed for condition {query}")
             return []
 
         soup = BeautifulSoup(resp.scrape_result["content"], "html.parser")
@@ -102,7 +81,7 @@ class RebagScraper:
 
                 title_tag = card.select_one(".products-carousel__card-title")
                 title = title_tag.text.strip() if title_tag else "Unknown"
-                if not Utility.combined_similarity(title=title, query=query):
+                if not Utility.combined_similarity(title=title, query=query, threshold=0.7):
                     continue
 
                 brand_tag = card.select_one(".products-carousel__card-designer")
@@ -110,12 +89,15 @@ class RebagScraper:
 
                 size, alt_size = "Unknown", None
                 details_tag = card.select_one(".products-carousel__card-condition")
+                condition = "Unknown"
                 if details_tag:
                     parts = [p.strip() for p in details_tag.text.split('|')]
                     if len(parts) > 1:
                         size = parts[1].replace("Size", "").strip()
                     if len(parts) > 2:
                         alt_size = parts[2]
+                    if len(parts) > 0:
+                        condition = parts[0].strip()
 
                 size = size or Utility.extract_size_from_title(title=title)
                 size = Utility.refine_us_size_string(size)
@@ -126,12 +108,12 @@ class RebagScraper:
 
                 location = Utility.extract_location_from_title(title=title)
 
-                if(condition_label == "Great"):
-                    condition_label = "Good"
-                elif(condition_label == "Very Good"):
-                    condition_label = "Good"
-                elif(condition_label == "Good"):
-                    condition_label = "Fair"
+                if(condition == "Great"):
+                    condition = "Good"
+                elif(condition == "Very Good"):
+                    condition = "Good"
+                elif(condition == "Good"):
+                    condition = "Fair"
 
                 base_data = {
                     "product_id": product_id,
@@ -139,7 +121,7 @@ class RebagScraper:
                     "listing_price": price,
                     "url": item_url,
                     "image_url": image_url,
-                    "condition": condition_label,
+                    "condition": condition,
                     "size": size,
                     "alt_size": alt_size,
                     "seller": "Rebag",
@@ -162,7 +144,7 @@ class RebagScraper:
         if results:
             await self.batch_insert_products(results, category)
 
-        self.logger.info(f"[Rebag] 📦 Parsed {len(results)} '{condition_label}' products from Rebag")
+        self.logger.info(f"[Rebag] 📦 Parsed {len(results)} '{query}' products from Rebag")
         return results
 
     async def batch_insert_products(self, items: list[dict], category: str):

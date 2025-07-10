@@ -75,13 +75,10 @@ class FashionphileScraper:
         try:
             resp = await self.scrape_with_retries(ScrapeConfig(
                 url=url,
-                render_js=True,
-                asp=True,
-                wait_for_selector="li.ais-Hits-item",
                 session=Utility.generate_random_session(),
                 proxy_pool="public_residential_pool",
                 retry=False,
-                timeout=60000,
+                timeout=15000,
                 country="US",
                 headers={
                     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',

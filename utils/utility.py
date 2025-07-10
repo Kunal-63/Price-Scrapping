@@ -3,9 +3,6 @@ import uuid
 import numpy as np
 from rapidfuzz import fuzz
 from sentence_transformers import SentenceTransformer, util
-from sklearn.feature_extraction.text import TfidfVectorizer
-from rapidfuzz import fuzz
-
 
 _sbert = SentenceTransformer("all-MiniLM-L6-v2")
 
@@ -133,7 +130,7 @@ class Utility:
         return "US"
     
     @staticmethod
-    def combined_similarity(title: str, query: str, threshold: float = 0.7) -> bool:
+    def combined_similarity(title: str, query: str, threshold: float = 0.75) -> bool:
         try:
             def clean_text(s: str) -> str:
                 return re.sub(r'[\W_]+', ' ', s.lower()).strip()

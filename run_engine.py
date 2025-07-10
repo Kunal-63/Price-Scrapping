@@ -8,7 +8,7 @@ session = Session()
 dynamodb = session.resource("dynamodb", region_name="us-east-1")
 table = dynamodb.Table("FinalProductsTable")
 
-CONCURRENCY = 2
+CONCURRENCY = 5
 
 async def process_item(search_engine, item, semaphore):
     async with semaphore:
@@ -38,18 +38,25 @@ async def process_top_items():
     search_engine = ProductSearchEngine()
     semaphore = asyncio.Semaphore(CONCURRENCY)
 
-    response = table.scan(Limit=2)
+    response = table.scan(Limit=100)
     items = response.get("Items", [])
     print(f"🔍 Retrieved {len(items)} items for processing")
 
     first_batch = items[:2]
     second_batch = items[2:]
 
+    start_all = time.time()
+
     tasks = [asyncio.create_task(process_item(search_engine, item, semaphore)) for item in first_batch]
 
     await asyncio.sleep(10)
     print("⏳ Launching second batch after 10 seconds...")
     tasks += [asyncio.create_task(process_item(search_engine, item, semaphore)) for item in second_batch]
+
+    await asyncio.gather(*tasks)
+
+    total_time = time.time() - start_all
+    print(f"✅ All items processed in {total_time:.2f} seconds")
 
     await asyncio.gather(*tasks)
 

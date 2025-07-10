@@ -58,18 +58,15 @@ class EbayScraper:
 
         urls = [
             f"https://www.ebay.com/sch/i.html?_nkw={quote(query)}&_sop=12&_pgn={page}"
-            for page in range(1, 4)
+            for page in [1]
         ]
 
         scrape_configs = [
             ScrapeConfig(
                 url=url,
-                render_js=True,
-                asp=True,
-                wait_for_selector=".s-item__title",
                 session=Utility.generate_random_session(),
                 retry=False,
-                timeout=60000,
+                timeout=15000,
                 country="US",
                 headers={
                     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -129,12 +126,9 @@ class EbayScraper:
         try:
             resp = await self.scrape_with_retries(ScrapeConfig(
                 url=url,
-                render_js=True,
-                asp=True,
-                wait_for_selector=".s-item__title",
                 session=Utility.generate_random_session(),
                 retry=False,
-                timeout=60000,
+                timeout=15000,
                 country="US",
                 headers={
                     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -175,7 +169,7 @@ class EbayScraper:
                 if not title_text or title_text.lower().startswith("shop on ebay"):
                     return
                 
-                if not Utility.combined_similarity(title=title_text, query=search_query):
+                if not Utility.combined_similarity(title=title_text, query=search_query, threshold=0.75):
                     return
 
                 link_el = item.select_one("a.s-item__link")

@@ -58,6 +58,32 @@ def create_table_if_not_exists(dynamodb, table_name, key_name, key_type='S'):
     except ClientError as e:
         print(f"❌ Error creating table {table_name}: {e}")
 
+def delete_all_items(dynamodb, table_name, key_name='url'):
+    table = dynamodb.Table(table_name)
+
+    print(f"⚠️ Deleting all items from table: {table_name}")
+    scan_kwargs = {}
+    deleted = 0
+
+    while True:
+        response = table.scan(**scan_kwargs)
+        items = response.get('Items', [])
+        if not items:
+            break
+
+        with table.batch_writer() as batch:
+            for item in items:
+                batch.delete_item(Key={key_name: item[key_name]})
+                deleted += 1
+
+        # pagination
+        if 'LastEvaluatedKey' in response:
+            scan_kwargs['ExclusiveStartKey'] = response['LastEvaluatedKey']
+        else:
+            break
+
+    print(f"✅ Deleted {deleted} items from {table_name}")
+
 if __name__ == "__main__":
     session = Session()
     dynamodb = session.resource("dynamodb", region_name="us-east-1")

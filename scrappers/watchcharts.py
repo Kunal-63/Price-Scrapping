@@ -92,7 +92,7 @@ class WatchChartsScraper:
 
                 title = title_el.get_text(strip=True) if title_el else "Unknown"
 
-                if not Utility.combined_similarity(title=title, query=search_query):
+                if not Utility.combined_similarity(title=title, query=search_query, threshold=0.7):
                     return
 
                 if price_el:

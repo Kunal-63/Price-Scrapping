@@ -45,8 +45,7 @@ class GrailedScraper:
             "is_new": "New",
             "is_gently_used": "Gently Used",
             "is_used": "Used",
-            "is_worn": "Worn",
-            "is_not_specified": "Not Specified"
+            "is_worn": "Worn"
         }
 
         # Launch concurrent tasks for each condition
@@ -61,17 +60,17 @@ class GrailedScraper:
 
     async def search_by_condition(self, query, category, product_id, image_query, search_query, condition_code, condition_label):
         url = f"https://www.grailed.com/shop?query={quote(query)}&condition={quote(condition_code)}"
-        self.logger.info(f"[Grailed] 🔍 Scraping: {condition_label} items for {query}")
+        self.logger.info(f"[Grailed] 🔍 Scraping: {condition_label} items for {query} {url}")
 
         try:
             resp = await self.scrape_with_retries(ScrapeConfig(
                 url=url,
-                asp=True,
-                render_js=True,
-                wait_for_selector="div.UserItem_root__8Q2R_",
                 country="US",
                 session=Utility.generate_random_session(),
                 retry=False,
+                asp=True,
+                render_js=True,
+                wait_for_selector="div.UserItem_root__8Q2R_",
                 timeout=60000,
                 headers={
                     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',

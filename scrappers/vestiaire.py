@@ -72,15 +72,15 @@ class VestiaireScraper:
         try:
             page_resp = await self.scrape_with_retries(ScrapeConfig(
                 url=url,
-                asp=True,
-                render_js=True,
                 rendering_wait=8000,
                 wait_for_selector="script#__NEXT_DATA__",
                 country="US",
                 session=Utility.generate_random_session(),
                 session_sticky_proxy=True,
                 retry=False,
-                timeout=60000,
+                timeout=40000,
+                render_js=True,
+                asp=True,
                 headers={
                     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -104,7 +104,7 @@ class VestiaireScraper:
 
             self.logger.info(f"[Vestiaire] ✅ Page 1 scraped with {len(results_raw)} items")
 
-            for page in range(1, total_pages):
+            for page in [1]:
                 offset = page * 48
                 payload["pagination"]["offset"] = offset
 
@@ -121,9 +121,8 @@ class VestiaireScraper:
                     country="US",
                     session=Utility.generate_random_session(),
                     session_sticky_proxy=True,
-                    asp=True,
-                    timeout=60000,
-                    retry=False
+                    timeout=15000,
+                    retry=False,
                 ))
 
                 page_items = json.loads(page_data.scrape_result["content"]).get("items", [])
@@ -154,7 +153,7 @@ class VestiaireScraper:
                         condition_label = "Fair"
 
                     title = f"{item.get('brand', {}).get('name', '')} {item.get('title', '')}".strip()
-                    if not Utility.combined_similarity(title=title, query=query):
+                    if not Utility.combined_similarity(title=title, query=query, threshold=0.7):
                         continue
 
                     result = {
