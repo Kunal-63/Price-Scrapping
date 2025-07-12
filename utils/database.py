@@ -18,8 +18,7 @@ def is_duplicate_today(url: str) -> bool:
         ExpressionAttributeValues={
             ":url_val": url,
             ":date_prefix": today_str
-        },
-        ProjectionExpression="url"
+        }
     )
 
     return len(response.get("Items", [])) > 0
