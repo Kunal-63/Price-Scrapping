@@ -24,7 +24,7 @@ class FarFetchFetcher:
     def fetch_all_items(self):
         """Paginate through DynamoDB scan and return all items."""
         all_items = []
-        response = self.table.scan(Limit=500)
+        response = self.table.scan()
         all_items.extend(response.get("Items", []))
 
         while "LastEvaluatedKey" in response:
@@ -32,7 +32,7 @@ class FarFetchFetcher:
             all_items.extend(response.get("Items", []))
 
         self.logger.info(f"📦 Total items fetched from DynamoDB: {len(all_items)}")
-        return all_items
+        return all_items[:500]
 
     def update_run_tracker(self, product_id, source="farfetch"):
         now = datetime.utcnow().isoformat()
