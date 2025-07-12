@@ -64,7 +64,7 @@ class GoogleFetcher:
                     search_query=query
                 )
 
-                self.logger.info(f"✅ {query}: {len(result.get('active', []))} active")
+                self.logger.info(f"✅ {query}: {len(result)} length")
                 self.logger.info(f"⏱️ Took {time.time() - start:.2f}s")
 
                 self.update_run_tracker(product_id)
