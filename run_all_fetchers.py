@@ -6,7 +6,7 @@ from fetch_scripts.fetch_ebay import EbayFetcher
 async def main():
     start_time = time.time()
 
-    ebay = EbayFetcher(concurrency=5)
+    ebay = EbayFetcher(concurrency=10)
     await ebay.run()
 
     end_time = time.time()

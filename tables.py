@@ -94,11 +94,42 @@ def create_product_table(dynamodb, table_name):
     except Exception as e:
         print(f"❌ Error creating product table {table_name}: {e}")
 
+def delete_all_items_from_table(dynamodb, table_name):
+    try:
+        table = dynamodb.Table(table_name)
+        print(f"🚨 Deleting all items from table: {table_name}")
+
+        # Get key names (e.g., 'id' or 'url', etc.)
+        key_names = [key['AttributeName'] for key in table.key_schema]
+
+        scan_kwargs = {}
+        done = False
+        while not done:
+            response = table.scan(**scan_kwargs)
+            items = response.get('Items', [])
+            if not items:
+                print("✅ No items to delete.")
+                break
+
+            with table.batch_writer() as batch:
+                for item in items:
+                    batch.delete_item(Key={k: item[k] for k in key_names})
+
+            scan_kwargs['ExclusiveStartKey'] = response.get('LastEvaluatedKey')
+            done = 'LastEvaluatedKey' not in response
+
+        print(f"✅ All items deleted from table: {table_name}")
+
+    except Exception as e:
+        print(f"❌ Error deleting items from {table_name}: {e}")
+
+
+
 if __name__ == "__main__":
     session = Session()
     dynamodb = session.resource("dynamodb", region_name="us-east-1")
 
     # Create table with product_id as GSI
     # create_table_if_not_exists(dynamodb, "ProductsTable", "id")
-    create_archive_table(dynamodb, "ArchiveProductsTable")
+    delete_all_items_from_table(dynamodb, "ProductsTable")
 

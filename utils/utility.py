@@ -6,6 +6,23 @@ from sentence_transformers import SentenceTransformer, util
 
 _sbert = SentenceTransformer("all-MiniLM-L6-v2")
 
+def generate_sample_sizes():
+    us_sizes = [f"{i}" for i in range(4, 15)] + [f"{i}.5" for i in range(4, 14)]
+    us_sizes = us_sizes + [f"us {s}" for s in us_sizes]
+
+    uk_sizes = [f"uk {i}" for i in range(4, 13)]
+    eu_sizes = [f"eu {i}" for i in range(35, 49)]
+    inch_sizes = [f"{i} inch" for i in range(6, 14)] + [f"{i} inches" for i in range(6, 14)]
+    cm_sizes = [f"{i} cm" for i in range(22, 32)]
+    mm_sizes = [f"{i} mm" for i in range(220, 320, 5)]
+
+    text_sizes = ["xs", "s", "m", "l", "xl", "xxl", "xxxl", "extra small", "small", "medium", "large", "extra large"]
+
+    return set(us_sizes + uk_sizes + eu_sizes + inch_sizes + cm_sizes + mm_sizes + text_sizes)
+
+SAMPLE_SIZES = generate_sample_sizes()
+
+
 class Utility:
     @staticmethod
     def generate_random_session():
@@ -66,24 +83,40 @@ class Utility:
         title = title.lower()
 
         size_patterns = [
-        r'\b(?:men\'s|women\'s|kids|youth)?\s*(?:us|uk|eu)?\s*size[\s\-:]?(\d{1,2}(?:\.\d{1,2})?)\b',
-        r'\b(\d{1,2}(?:\.\d{1,2})?)\s*(us|uk|eu|jp|it|fr)\b',
-        r'\b(us|uk|eu|jp|it|fr)\s*(\d{1,2}(?:\.\d{1,2})?)\b',
-        r'\b(xs|s|m|l|xl|xxl|xxxl|2xl|3xl|4xl|extra small|small|medium|large|extra large)\b',
-        r'\bw(\d{1,2})\s*l(\d{1,2})\b',
-        r'\b(\d{2,3})\s*(cm|mm|inches|inch)\b'
+            r'\b(us|uk|eu|jp|it|fr)?[\s\-:]?(size[\s\-:]?)?(\d{1,2}(\.\d)?)(?=\b|[^a-z0-9])\b',
+            r'\b(xs|s|m|l|xl|xxl|xxxl|2xl|3xl|4xl|extra small|small|medium|large|extra large)\b',
+            r'\b(\d{1,2}(\.\d)?)[ ]?(us|uk|eu|jp|it|fr)\b',
+            r'\bw(\d{1,2}) ?l(\d{1,2})\b',
+            r'\b\d{2,3} ?(cm|mm|inch|inches)\b'
         ]
 
+        possible_sizes = []
         for pattern in size_patterns:
-            match = re.search(pattern, title)
-            if match:
-                groups = match.groups()
-                if len(groups) == 1:
-                    size_str = groups[0]
-                else:
-                    size_str = " ".join(g for g in groups if g and not g.strip().lower() == "size")
-                cleaned = re.sub(r'\bsize\b[\s\-:]*', '', size_str, flags=re.IGNORECASE).strip()
-                return Utility.refine_us_size_string(cleaned)
+            for match in re.finditer(pattern, title):
+                candidate = match.group().strip()
+                cleaned = re.sub(r'\bsize\b[\s\-:]*', '', candidate, flags=re.IGNORECASE).strip()
+                possible_sizes.append((cleaned, match.start()))
+
+        if not possible_sizes:
+            return "Not present"
+
+        for size_candidate, start in possible_sizes:
+            context = title[max(0, start - 15):start + 15]
+            score = fuzz.partial_ratio(context, f"size {size_candidate}")
+            embedding_score = util.cos_sim(
+                _sbert.encode([context])[0],
+                _sbert.encode(["shoe size"])[0]
+            ).item()
+
+            normalized = size_candidate.lower().strip()
+
+            # Validate against sample sizes
+            if (
+                normalized in SAMPLE_SIZES
+                or any(fuzz.ratio(normalized, sample) > 90 for sample in SAMPLE_SIZES)
+            ):
+                if score >= 80 or embedding_score > 0.47:
+                    return Utility.refine_us_size_string(normalized)
 
         return "Not present"
         
