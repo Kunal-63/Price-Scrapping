@@ -12,9 +12,9 @@ async def main():
 
     ebay = EbayFetcher(concurrency=20) # 40
     farfetch = FarFetchFetcher(concurrency=15) # 15
-    fashionphile = FashionphileFetcher(concurrency=20) # 20
+    fashionphile = FashionphileFetcher(concurrency=15) # 15
     google = GoogleFetcher(concurrency=50)
-    rebag = RebagFetcher(concurrency=20) # 20
+    rebag = RebagFetcher(concurrency=15) # 15
     stockx = StockXFetcher(concurrency=5) # 10
 
     await asyncio.gather(
