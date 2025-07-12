@@ -11,11 +11,15 @@ def is_duplicate_today(url: str) -> bool:
 
     response = product_table.query(
         IndexName="UrlCreatedAtIndex",
-        KeyConditionExpression="url = :url_val AND begins_with(created_at, :date_prefix)",
+        KeyConditionExpression="#u = :url_val AND begins_with(created_at, :date_prefix)",
+        ExpressionAttributeNames={
+            "#u": "url"
+        },
         ExpressionAttributeValues={
             ":url_val": url,
             ":date_prefix": today_str
-        }
+        },
+        ProjectionExpression="url"
     )
 
     return len(response.get("Items", [])) > 0
