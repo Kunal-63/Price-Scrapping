@@ -47,8 +47,8 @@ class EbayFetcher:
                     query=query,
                     category=category,
                     product_id=product_id,
-                    image_url=image,
-                    refined_query=query  # Skipping Gemini
+                    image_query=query,
+                    search_query=query
                 )
 
                 active = len(result.get("active", []))

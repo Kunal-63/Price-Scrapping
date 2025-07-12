@@ -18,6 +18,7 @@ from boto3.session import Session
 from decimal import Decimal
 from utils.antropic import AnthropicRefiner
 from models.product_item import ProductModel
+from collections import defaultdict
 
 router = APIRouter()
 logger = get_logger()
@@ -248,4 +249,54 @@ async def fetch_product_by_id(input_data: ProductIdInput):
 
     except Exception as e:
         logger.exception("Failed to fetch product by ID with filters")
+        return {"error": str(e)}
+
+
+@router.get("/count_by_source/")
+async def count_products_by_source():
+    try:
+        all_items = []
+        response = product_table.scan()
+        all_items.extend(response.get("Items", []))
+
+        while "LastEvaluatedKey" in response:
+            response = product_table.scan(ExclusiveStartKey=response["LastEvaluatedKey"])
+            all_items.extend(response.get("Items", []))
+
+        source_counts = defaultdict(int)
+        for item in all_items:
+            source = item.get("source", "Unknown")
+            source_counts[source] += 1
+
+        return {
+            "total_products": len(all_items),
+            "counts_by_source": dict(source_counts)
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
+
+@router.get("/products_by_condition/")
+async def products_by_condition(condition: str):
+    try:
+        filter_expr = Attr("condition").eq(condition)
+        all_items = []
+
+        response = product_table.scan(FilterExpression=filter_expr)
+        all_items.extend(response.get("Items", []))
+
+        while "LastEvaluatedKey" in response:
+            response = product_table.scan(
+                FilterExpression=filter_expr,
+                ExclusiveStartKey=response["LastEvaluatedKey"]
+            )
+            all_items.extend(response.get("Items", []))
+
+        return {
+            "condition": condition,
+            "count": len(all_items),
+            "products": all_items
+        }
+
+    except Exception as e:
         return {"error": str(e)}
