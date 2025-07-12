@@ -92,7 +92,7 @@ class RebagScraper:
 
                 size, alt_size = "Unknown", None
                 details_tag = card.select_one(".products-carousel__card-condition")
-                condition = "Unknown"
+                condition = ""
                 if details_tag:
                     parts = [p.strip() for p in details_tag.text.split('|')]
                     if len(parts) > 1:

@@ -126,7 +126,7 @@ def delete_all_items_from_table(dynamodb, table_name):
 
 
 if __name__ == "__main__":
-    session = Session()
+    session = Session(profile_name='auricore-dev-kunal')
     dynamodb = session.resource("dynamodb", region_name="us-east-1")
 
     # Create table with product_id as GSI
