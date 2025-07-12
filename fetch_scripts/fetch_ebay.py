@@ -24,7 +24,7 @@ class EbayFetcher:
     def fetch_all_items(self):
         """Paginate through DynamoDB scan and return all items."""
         all_items = []
-        response = self.table.scan(Limit=1000)
+        response = self.table.scan(Limit=500)
         all_items.extend(response.get("Items", []))
 
         while "LastEvaluatedKey" in response:
