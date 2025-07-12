@@ -66,17 +66,22 @@ class Utility:
         title = title.lower()
 
         size_patterns = [
-            r'\b(us|uk|eu|jp|it|fr)?[\s\-:]?(size[\s\-:]?)?(\d{1,3}(\.\d)?( ?[ym]?)?)\b',
-            r'\b(xs|s|m|l|xl|xxl|xxxl|2xl|3xl|4xl|extra small|small|medium|large|extra large)\b',
-            r'\b(\d{1,2}(\.\d)?[ ]?(us|uk|eu|jp|it|fr))\b',
-            r'\bw(\d{1,2}) ?l(\d{1,2})\b',
-            r'\b\d{1,3}[ ]?(cm|inches|inch|mm)\b'
+        r'\b(?:men\'s|women\'s|kids|youth)?\s*(?:us|uk|eu)?\s*size[\s\-:]?(\d{1,2}(?:\.\d{1,2})?)\b',
+        r'\b(\d{1,2}(?:\.\d{1,2})?)\s*(us|uk|eu|jp|it|fr)\b',
+        r'\b(us|uk|eu|jp|it|fr)\s*(\d{1,2}(?:\.\d{1,2})?)\b',
+        r'\b(xs|s|m|l|xl|xxl|xxxl|2xl|3xl|4xl|extra small|small|medium|large|extra large)\b',
+        r'\bw(\d{1,2})\s*l(\d{1,2})\b',
+        r'\b(\d{2,3})\s*(cm|mm|inches|inch)\b'
         ]
 
         for pattern in size_patterns:
             match = re.search(pattern, title)
             if match:
-                size_str = match.group().strip()
+                groups = match.groups()
+                if len(groups) == 1:
+                    size_str = groups[0]
+                else:
+                    size_str = " ".join(g for g in groups if g and not g.strip().lower() == "size")
                 cleaned = re.sub(r'\bsize\b[\s\-:]*', '', size_str, flags=re.IGNORECASE).strip()
                 return Utility.refine_us_size_string(cleaned)
 
