@@ -298,25 +298,50 @@ async def countc_products_by_source(product_id: Optional[str] = None):
         return {"error": str(e)}
 
 @router.get("/products_by_condition/")
-async def products_by_condition(condition: str):
+async def products_by_condition(condition: str = Query(default=None)):
     try:
-        filter_expr = Attr("condition").eq(condition)
         all_items = []
 
-        response = product_table.scan(FilterExpression=filter_expr)
+        if condition:
+            filter_expr = Attr("condition").eq(condition)
+            response = product_table.scan(FilterExpression=filter_expr)
+        else:
+            response = product_table.scan()
+
         all_items.extend(response.get("Items", []))
 
         while "LastEvaluatedKey" in response:
-            response = product_table.scan(
-                FilterExpression=filter_expr,
-                ExclusiveStartKey=response["LastEvaluatedKey"]
-            )
+            if condition:
+                response = product_table.scan(
+                    FilterExpression=filter_expr,
+                    ExclusiveStartKey=response["LastEvaluatedKey"]
+                )
+            else:
+                response = product_table.scan(
+                    ExclusiveStartKey=response["LastEvaluatedKey"]
+                )
             all_items.extend(response.get("Items", []))
 
+        if condition:
+            return {
+                "condition": condition,
+                "count": len(all_items),
+                "products": all_items
+            }
+
+        grouped = defaultdict(lambda: defaultdict(int))
+        for item in all_items:
+            cond = item.get("condition", "Unknown")
+            src = item.get("source", "Unknown")
+            grouped[cond][src] += 1
+
+        summary = {
+            cond: dict(srcs) for cond, srcs in grouped.items()
+        }
+
         return {
-            "condition": condition,
-            "count": len(all_items),
-            "products": all_items
+            "total_products": len(all_items),
+            "grouped_by_condition_and_source": summary
         }
 
     except Exception as e:
