@@ -16,7 +16,7 @@ class GoogleFetcher:
         self.session = Session()
         self.dynamodb = self.session.resource("dynamodb", region_name="us-east-1")
         self.table = self.dynamodb.Table("FinalProductsTable")
-        self.scraper = SerpAPISearcher(Config.SCRAPFLY_KEY)
+        self.scraper = SerpAPISearcher()
 
     def fetch_all_items(self):
         """Paginate through DynamoDB scan and return all items."""
