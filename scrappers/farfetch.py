@@ -73,6 +73,7 @@ class FarfetchScraper:
 
         for item in items:
             try:
+                link_tag = item.select_one("a[data-component='ProductCardLink']")
                 product_url = f"https://www.farfetch.com{link_tag['href']}"
                 if is_duplicate_today(url=product_url):
                     continue
@@ -84,7 +85,6 @@ class FarfetchScraper:
                     continue
 
                 price_el = item.select_one("p[data-component='PriceFinal']")
-                link_tag = item.select_one("a[data-component='ProductCardLink']")
                 image_tag = item.select_one("link[itemprop='image']")
 
                 condition_tag = item.select_one("p[data-component='LabelPrimary']")
