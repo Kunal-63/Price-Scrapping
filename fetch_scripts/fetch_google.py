@@ -1,11 +1,13 @@
 import asyncio
 import time
+from datetime import datetime, timedelta
 import boto3
 from boto3.session import Session
 
 from utils.logger import get_logger
 from scrappers.serp import SerpAPISearcher
 from config.scrapper_config import Config
+from config.scrapping_tracker_config import ScrappingTrakcerConfig
 
 class GoogleFetcher:
     def __init__(self, concurrency: int = 5):
@@ -16,12 +18,13 @@ class GoogleFetcher:
         self.session = Session()
         self.dynamodb = self.session.resource("dynamodb", region_name="us-east-1")
         self.table = self.dynamodb.Table("FinalProductsTable")
+        self.tracker = self.dynamodb.Table("ScraperRunTracker")
         self.scraper = SerpAPISearcher()
 
     def fetch_all_items(self):
         """Paginate through DynamoDB scan and return all items."""
         all_items = []
-        response = self.table.scan()
+        response = self.table.scan(Limit=1000)
         all_items.extend(response.get("Items", []))
 
         while "LastEvaluatedKey" in response:
@@ -30,6 +33,16 @@ class GoogleFetcher:
 
         self.logger.info(f"📦 Total items fetched from DynamoDB: {len(all_items)}")
         return all_items
+
+    def update_run_tracker(self, product_id, source="google"):
+        now = datetime.utcnow().isoformat()
+        next_run = (datetime.utcnow() + timedelta(hours=ScrappingTrakcerConfig.GOOGLE)).isoformat()
+        self.tracker.put_item(Item={
+            "product_id": product_id,
+            "source": source,
+            "last_run": now,
+            "next_run": next_run
+        })
 
     async def process_item(self, item):
         async with self.semaphore:
@@ -51,16 +64,18 @@ class GoogleFetcher:
                     search_query=query
                 )
 
-                self.logger.info(f"✅ {query}: {result} length")
+                self.logger.info(f"✅ {query}: {len(result.get('active', []))} active")
                 self.logger.info(f"⏱️ Took {time.time() - start:.2f}s")
+
+                self.update_run_tracker(product_id)
                 return result
             except Exception as e:
                 self.logger.error(f"❌ Error for {item.get('canonical_name')}: {e}")
                 return None
 
-    async def run(self):
-        items = self.fetch_all_items()
-        self.logger.info(f"🔧 Beginning processing of {len(items)} items...")
+    async def run(self, single_product: dict = None):
+        items = [single_product] if single_product else self.fetch_all_items()
+        self.logger.info(f"🔧 Beginning processing of {len(items)} item(s)...")
 
         start_all = time.time()
         tasks = [asyncio.create_task(self.process_item(item)) for item in items]
