@@ -251,17 +251,36 @@ async def fetch_product_by_id(input_data: ProductIdInput):
         logger.exception("Failed to fetch product by ID with filters")
         return {"error": str(e)}
 
-
 @router.get("/count_by_source/")
-async def count_products_by_source():
+async def countc_products_by_source(product_id: Optional[str] = None):
     try:
         all_items = []
-        response = product_table.scan()
-        all_items.extend(response.get("Items", []))
 
-        while "LastEvaluatedKey" in response:
-            response = product_table.scan(ExclusiveStartKey=response["LastEvaluatedKey"])
+        if product_id:
+            # Query using GSI if product_id is provided
+            response = product_table.query(
+                IndexName="ProductIdIndex",
+                KeyConditionExpression=Key("product_id").eq(product_id)
+            )
             all_items.extend(response.get("Items", []))
+
+            while "LastEvaluatedKey" in response:
+                response = product_table.query(
+                    IndexName="ProductIdIndex",
+                    KeyConditionExpression=Key("product_id").eq(product_id),
+                    ExclusiveStartKey=response["LastEvaluatedKey"]
+                )
+                all_items.extend(response.get("Items", []))
+        else:
+            # Full scan if no product_id is given
+            response = product_table.scan()
+            all_items.extend(response.get("Items", []))
+
+            while "LastEvaluatedKey" in response:
+                response = product_table.scan(
+                    ExclusiveStartKey=response["LastEvaluatedKey"]
+                )
+                all_items.extend(response.get("Items", []))
 
         source_counts = defaultdict(int)
         for item in all_items:
@@ -270,10 +289,12 @@ async def count_products_by_source():
 
         return {
             "total_products": len(all_items),
-            "counts_by_source": dict(source_counts)
+            "counts_by_source": dict(source_counts),
+            "filtered_by_product_id": bool(product_id)
         }
 
     except Exception as e:
+        logger.exception("Error counting products by source")
         return {"error": str(e)}
 
 @router.get("/products_by_condition/")
