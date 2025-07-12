@@ -162,6 +162,7 @@ class EbayScraper:
     async def _parse_item(self, item, sem, product_id, image_query, search_query, category, listings, products_to_insert):
         async with sem:
             try:
+                link_el = item.select_one("a.s-item__link")
                 detail_url = link_el['href']
                 if not detail_url:
                     return
@@ -180,7 +181,7 @@ class EbayScraper:
                 if not Utility.combined_similarity(title=title_text, query=search_query, threshold=0.8):
                     return
 
-                link_el = item.select_one("a.s-item__link")
+                
                 price_el = item.select_one(".s-item__price")
                 if not price_el:
                     self.logger.warning("[eBay] ⚠️ Skipping item due to missing price.")
