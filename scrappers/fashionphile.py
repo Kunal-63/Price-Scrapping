@@ -16,6 +16,7 @@ import backoff
 from utils.antropic import AnthropicRefiner
 from price_parser import Price
 from concurrent.futures import ThreadPoolExecutor
+from utils.database import is_duplicate_today
 
 class FashionphileScraper:
     def __init__(self, scrapfly_key):
@@ -109,13 +110,17 @@ class FashionphileScraper:
                 if not (link_tag and title_tag and brand_tag and price_tag):
                     continue
 
+                url_full = urljoin("https://www.fashionphile.com", link_tag["href"])
+                if is_duplicate_today(url=url):
+                    continue
+
                 title = f"{brand_tag.text.strip()} {title_tag.text.strip()}"
                 if not Utility.combined_similarity(title=title, query=query):
                     continue
                 price_text = price_tag.text.strip()
                 price_data = Price.fromstring(price_text)
                 price = price_data.amount_float if price_data.amount_float else None
-                url_full = urljoin("https://www.fashionphile.com", link_tag["href"])
+                
                 image_url = image_tag["src"] if image_tag and image_tag.has_attr("src") else None
 
                 if(condition_label == "Giftable"):

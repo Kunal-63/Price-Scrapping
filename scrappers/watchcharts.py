@@ -115,7 +115,7 @@ class WatchChartsScraper:
                 elif('pre' in condition.lower()):
                     condition = "Good"
                 else:
-                    condition = "Varies"                
+                    condition = "New"                
                 
                 seller_platform = (
                     "Chrono24" if "chrono24" in meta.lower() else

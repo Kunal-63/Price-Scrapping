@@ -4,6 +4,7 @@ import uuid
 
 class ProductModel:
     def __init__(self, base_data: dict, category: str):
+        self.id = f'{base_data.get("url", "")} | {datetime.utcnow().date().isoformat()}'
         self.product_id = base_data.get("product_id", str(uuid.uuid4()))
         self.title = base_data.get("title", "")
         self.listing_price = Decimal(str(base_data.get("listing_price", 0)))
@@ -16,7 +17,7 @@ class ProductModel:
         self.source = base_data.get("source", "unknown")
         self.size = base_data.get("size")
         self.category = category
-        self.created_at = datetime.utcnow().isoformat()
+        self.created_at = datetime.utcnow().date().isoformat()
 
     def to_dict(self):
         return self.__dict__

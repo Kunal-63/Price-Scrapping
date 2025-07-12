@@ -11,7 +11,7 @@ from models.product_item import ProductModel
 from price_parser.parser import Price
 import backoff
 from utils.antropic import AnthropicRefiner
-
+from utils.database import is_duplicate_today
 
 class SerpAPISearcher:
     def __init__(self):
@@ -47,12 +47,16 @@ class SerpAPISearcher:
             tasks = []
 
             for p in products:
+                link = p.get("product_link")
+                if is_duplicate_today(url=link):
+                    continue
+
                 title = p.get("title")
                 if not Utility.combined_similarity(title=title, query=query):
                     continue
+                
                 raw_price = p.get("price")
-                link = p.get("product_link")
-                condition = p.get("condition") or "Varies"
+                condition = p.get("condition") or "New"
                 seller = p.get("source") or "Unknown"
                 shipping = (
                     p.get("shipping", {}).get("price") if isinstance(p.get("shipping"), dict)

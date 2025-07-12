@@ -14,6 +14,7 @@ from boto3.dynamodb.conditions import Attr
 from config.scrapper_config import Config
 from utils.antropic import AnthropicRefiner
 import backoff
+from utils.database import is_duplicate_today
 
 class EbayScraper:
     def __init__(self, scrapfly_key):
@@ -161,6 +162,13 @@ class EbayScraper:
     async def _parse_item(self, item, sem, product_id, image_query, search_query, category, listings, products_to_insert):
         async with sem:
             try:
+                detail_url = link_el['href']
+                if not detail_url:
+                    return
+                
+                if is_duplicate_today(url=detail_url):
+                    return
+                
                 title_el = item.select_one(".s-item__title")
                 if not title_el:
                     return
@@ -169,7 +177,7 @@ class EbayScraper:
                 if not title_text or title_text.lower().startswith("shop on ebay"):
                     return
                 
-                if not Utility.combined_similarity(title=title_text, query=search_query, threshold=0.75):
+                if not Utility.combined_similarity(title=title_text, query=search_query, threshold=0.8):
                     return
 
                 link_el = item.select_one("a.s-item__link")
@@ -185,18 +193,18 @@ class EbayScraper:
                 price_data = Price.fromstring(price_text)
                 price_value = price_data.amount_float if price_data.amount_float else None
 
-                detail_url = link_el['href']
+                
                 size = Utility.extract_size_from_title(title_text)
                 size = Utility.refine_us_size_string(size)
                 location = (item.select_one(".s-item__location").text.strip() if item.select_one(".s-item__location") else "Not specified")
 
-                condition = item.select_one(".SECONDARY_INFO").text.strip() if item.select_one(".SECONDARY_INFO") else "Unknown"
+                condition = item.select_one(".SECONDARY_INFO").text.strip() if item.select_one(".SECONDARY_INFO") else (item.select_one(".s-item__seller-info-text") or item.select_one(".s-item__subtitle")).text.replace("Seller:", "").strip() if (item.select_one(".s-item__seller-info-text") or item.select_one(".s-item__subtitle")) else "Unknown"
                 if('new' in condition.lower()):
                     condition = "New"
                 elif('pre' in condition.lower()):
                     condition = "Good"
                 else:
-                    condition = "Varies"
+                    condition = "Good"
 
                 base_data = {
                     "title": title_text,

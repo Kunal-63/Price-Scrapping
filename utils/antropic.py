@@ -131,11 +131,11 @@ class AnthropicRefiner:
             "You are an intelligent product metadata extractor. "
             "Given a product title, extract the condition of the product from it. "
             "Only return one of: 'New', 'Like New', "
-            "'Excellent', 'Good', 'Fair', or 'Varies'.\n\n"
+            "'Excellent', 'Good', 'Fair'.\n\n"
             f"Product title: {title}\n\n"
         )
         text = self.call_claude(prompt).strip().capitalize()
-        return text if text in {"New", "Like New", "Excellent", "Good", "Fair", "Varies"} else "Varies"
+        return text if text in {"New", "Like New", "Excellent", "Good", "Fair"} else "Good"
     
     def refine_location(self, location: str) -> str:
         if not location or location.lower() in {"not present", "unknown", "n/a"}:

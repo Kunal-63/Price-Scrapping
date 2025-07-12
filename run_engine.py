@@ -8,7 +8,7 @@ session = Session()
 dynamodb = session.resource("dynamodb", region_name="us-east-1")
 table = dynamodb.Table("FinalProductsTable")
 
-CONCURRENCY = 5
+CONCURRENCY = 6
 
 async def process_item(search_engine, item, semaphore):
     async with semaphore:
@@ -42,8 +42,8 @@ async def process_top_items():
     items = response.get("Items", [])
     print(f"🔍 Retrieved {len(items)} items for processing")
 
-    first_batch = items[:2]
-    second_batch = items[2:]
+    first_batch = items[:50]
+    second_batch = items[50:]
 
     start_all = time.time()
 

@@ -14,6 +14,7 @@ from utils.utility import Utility
 from utils.antropic import AnthropicRefiner
 from models.product_item import ProductModel
 from config.scrapper_config import Config
+from utils.database import is_duplicate_today
 
 class Chrono24Scraper:
     def __init__(self, scrapfly_key):
@@ -35,6 +36,7 @@ class Chrono24Scraper:
         giveup=lambda e: "OPERATION_TIMEOUT" not in str(e)
     )
     async def scrape_with_retries(self, config):
+        self.logger.debug(f"[Chrono24] ⏳ Scraping URL: {config.url}")
         async with self.semaphore:
             return await self.client.async_scrape(config)
 
@@ -53,6 +55,7 @@ class Chrono24Scraper:
             for condition in condition_filters
         ]
 
+        self.logger.info(f"[Chrono24] 🔍 Launching Chrono24 search for: {query} with {len(urls)} conditions")
         tasks = [
             self.fetch_and_parse(url, category, product_id, image_query, query)
             for url in urls
@@ -67,10 +70,12 @@ class Chrono24Scraper:
                     seen.add(item["url"])
                     merged.append(item)
 
+        self.logger.info(f"[Chrono24] ✅ Total unique Chrono24 items inserted: {len(merged)}")
         return merged
 
     async def fetch_and_parse(self, url, category, product_id, image_query, search_query):
         try:
+            self.logger.debug(f"[Chrono24] 🌐 Scraping filtered URL: {url}")
             resp = await self.scrape_with_retries(ScrapeConfig(
                 url=url,
                 asp=True,
@@ -79,11 +84,11 @@ class Chrono24Scraper:
                 session=Utility.generate_random_session(),
                 proxy_pool="public_residential_pool",
                 headers={
-                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.5',
-                    'Cache-Control': 'no-cache',
-                    'Pragma': 'no-cache',
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/122.0.0.0 Safari/537.36"
+                    )
                 }
             ))
         except Exception as e:
@@ -92,7 +97,7 @@ class Chrono24Scraper:
 
         parsed_url = urlparse(url)
         query_params = parse_qs(parsed_url.query)
-        condition = query_params.get("usedOrNew", ["Varies"])[0]
+        condition = query_params.get("usedOrNew", ["New"])[0]
         diameters = query_params.get("caseDiameter", [])
         size = f"{min(map(int, diameters))}mm - {max(map(int, diameters))}mm" if diameters else "Unknown"
 
@@ -110,8 +115,11 @@ class Chrono24Scraper:
                                 if not item_url:
                                     continue
 
+                                if is_duplicate_today(url=item_url):
+                                    continue
+
                                 title = offer.get("name", "").strip()
-                                if not Utility.combined_similarity(title=title, query=search_query, threshold=0.7):
+                                if not Utility.combined_similarity(title=title, query=search_query):
                                     continue
                                 price_text = str(offer.get("price", "")).strip()
                                 parsed_price = Price.fromstring(price_text)
@@ -130,7 +138,7 @@ class Chrono24Scraper:
                                 elif(condition.lower() == 'used'):
                                     condition = 'Used'
                                 else:
-                                    condition = 'Varies'
+                                    condition = 'New'
 
                                 base_data = {
                                     "product_id": product_id,
@@ -159,6 +167,7 @@ class Chrono24Scraper:
         if items_to_insert:
             self.bulk_insert_products(items_to_insert)
 
+        self.logger.info(f"[Chrono24] 📦 Parsed {len(items_to_insert)} products from {url}")
         return items_to_insert
 
     def bulk_insert_products(self, items: list):
@@ -170,6 +179,7 @@ class Chrono24Scraper:
                 with self.product_table.batch_writer(overwrite_by_pkeys=["url"]) as writer:
                     for item in batch:
                         writer.put_item(Item=item)
+                        self.logger.info(f"Inserting... {item}")
                 self.logger.info(f"[Chrono24] ✅ Inserted batch of {len(batch)} items. CHRONO")
             except Exception as e:
                 self.logger.exception(f"[Chrono24] ❌ Batch insert failed: {e}")

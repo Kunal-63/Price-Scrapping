@@ -85,7 +85,7 @@ class Utility:
     @staticmethod
     def extract_condition_from_title(title: str) -> str:
         if not title:
-            return "Varies"
+            return "Good"
 
         title = title.lower()
         patterns = [
@@ -99,7 +99,7 @@ class Utility:
             if re.search(pattern, title):
                 return condition
 
-        return "Varies"
+        return "Good"
     
     def refine_location_string(location: str) -> str:
         if not location:

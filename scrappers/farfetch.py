@@ -15,6 +15,7 @@ from config.scrapper_config import Config
 from utils.antropic import AnthropicRefiner
 import backoff
 from concurrent.futures import ThreadPoolExecutor
+from utils.database import is_duplicate_today
 
 class FarfetchScraper:
     def __init__(self, scrapfly_key):
@@ -72,10 +73,14 @@ class FarfetchScraper:
 
         for item in items:
             try:
+                product_url = f"https://www.farfetch.com{link_tag['href']}"
+                if is_duplicate_today(url=product_url):
+                    continue
+                
                 brand = item.select_one("p[data-component='ProductCardBrandName']")
                 title = item.select_one("p[data-component='ProductCardDescription']")
 
-                if not Utility.combined_similarity(title=title.text.strip(), query=query, threshold=0):
+                if not Utility.combined_similarity(title=title.text.strip(), query=query, threshold=0.78):
                     continue
 
                 price_el = item.select_one("p[data-component='PriceFinal']")
@@ -94,7 +99,7 @@ class FarfetchScraper:
                 currency = price_data.currency or "USD"
 
                 # Build product data
-                product_url = f"https://www.farfetch.com{link_tag['href']}"
+                
                 image_url = image_tag["href"] if image_tag else None
                 combined_title = f"{brand.text.strip()} {title.text.strip()}"
 

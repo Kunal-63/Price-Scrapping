@@ -14,6 +14,7 @@ from models.product_item import ProductModel
 from utils.antropic import AnthropicRefiner
 import backoff
 import concurrent.futures
+from utils.database import is_duplicate_today
 
 class StockXScraper:
     def __init__(self, scrapfly_key):
@@ -62,10 +63,14 @@ class StockXScraper:
             soup = BeautifulSoup(html, "html.parser")
 
             results = []
-            for tile in soup.select('div[data-testid="ProductTile"]')[::5]:
+            for tile in soup.select('div[data-testid="ProductTile"]')[:5]:
+                link_el = tile.select_one('a[data-testid="productTile-ProductSwitcherLink"]')
+                url_full = f"https://stockx.com{link_el['href']}"
+                if is_duplicate_today(url=url_full):
+                    continue
+ 
                 title_el = tile.select_one('[data-testid="product-tile-title"]')
                 price_el = tile.select_one('[data-testid="product-tile-lowest-ask-amount"]')
-                link_el = tile.select_one('a[data-testid="productTile-ProductSwitcherLink"]')
                 image_el = tile.select_one('img[src]')
 
                 if not title_el or not price_el or not link_el:
@@ -82,7 +87,6 @@ class StockXScraper:
                     self.logger.warning(f"⚠️ Skipping invalid price: {price_text}")
                     continue
 
-                url_full = f"https://stockx.com{link_el['href']}"
                 image_url = image_el["src"] if image_el else None
                 size = Utility.extract_size_from_title(title)
                 size = Utility.refine_us_size_string(size)

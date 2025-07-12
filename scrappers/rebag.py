@@ -14,6 +14,7 @@ from config.scrapper_config import Config
 from price_parser.parser import Price
 import backoff
 from utils.antropic import AnthropicRefiner
+from utils.database import is_duplicate_today
 
 class RebagScraper:
     def __init__(self, scrapfly_key):
@@ -75,6 +76,8 @@ class RebagScraper:
                 if not link_tag:
                     continue
                 item_url = link_tag.get("href", "").strip()
+                if is_duplicate_today(url=item_url):
+                    continue
 
                 image_tag = card.select_one("img")
                 image_url = image_tag.get("src") if image_tag else None

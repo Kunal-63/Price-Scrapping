@@ -109,9 +109,12 @@ class ProductSearchEngine:
         tasks.extend([
             fetch(self.fashionphile, "Fashionphile"),
             # fetch(self.realreal, "The RealReal"),
+            dummy(),
             fetch(self.rebag, "Rebag"),
-            fetch(self.vestiaire, "Vestiaire"),
-            fetch(self.grailed, "Grailed"),
+            # fetch(self.vestiaire, "Vestiaire"),
+            # fetch(self.grailed, "Grailed"),
+            dummy(),
+            dummy(),
             fetch(self.farfetch, "Farfetch"),
             fetch(self.serpapi_searcher, "Google Shopping"),
         ])
@@ -122,18 +125,17 @@ class ProductSearchEngine:
 
         combined = {
             "query": final_query,
-            "testing": results[0],
-            # "ebay_results": results[0],
-            # "stockx_results": results[1],
-            # "watchcharts_results": results[2],
-            # "chrono24_results": results[3],
-            # "fashionphile_results": results[4],
-            # "realreal_results": results[5],
+            "ebay_results": results[0],
+            "stockx_results": results[1],
+            "watchcharts_results": results[2],
+            "chrono24_results": results[3],
+            "fashionphile_results": results[4],
+            "realreal_results": results[5],
             # "rebag_results": results[6],
             # "vestiaire_results": results[7],
             # "grailed_results": results[8],
-            # "farfetch_results": results[9],
-            # "google_shopping_results": results[10],
+            "farfetch_results": results[9],
+            "google_shopping_results": results[10],
         }
         
         logger.info("Final Combined Results prepared.")

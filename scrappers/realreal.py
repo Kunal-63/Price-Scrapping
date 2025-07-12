@@ -74,14 +74,10 @@ class RealRealScraper:
         try:
             resp = await self.scrape_with_retries(ScrapeConfig(
                 url=url,
-                render_js=True,
-                asp=True,
-                wait_for_selector=".product-card-wrapper",
-                rendering_stage="complete",
                 session=Utility.generate_random_session(),
                 country="US",
                 proxy_pool="public_residential_pool",
-                timeout=60000,
+                timeout=15000,
                 retry=False,
                 headers={
                     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -117,7 +113,7 @@ class RealRealScraper:
                 brand = brand_tag.text.strip()
                 name = name_tag.text.strip()
                 title = f"{brand} {name}"
-                if not Utility.combined_similarity(title=title, query=query):
+                if not Utility.combined_similarity(title=title, query=query, threshold=0.8):
                     continue
                 if location_tag:
                     location = location_tag.text.strip()
