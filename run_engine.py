@@ -38,12 +38,13 @@ async def process_top_items():
     search_engine = ProductSearchEngine()
     semaphore = asyncio.Semaphore(CONCURRENCY)
 
-    response = table.scan(Limit=100)
+    response = table.scan()
     items = response.get("Items", [])
     print(f"🔍 Retrieved {len(items)} items for processing")
-
-    first_batch = items[:50]
-    second_batch = items[50:]
+    
+    half = len(items)//2
+    first_batch = items[:half]
+    second_batch = items[half:]
 
     start_all = time.time()
 

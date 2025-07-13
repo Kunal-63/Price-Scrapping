@@ -32,7 +32,7 @@ class FashionphileFetcher:
             all_items.extend(response.get("Items", []))
 
         self.logger.info(f"📦 Total items fetched from DynamoDB: {len(all_items)}")
-        return all_items[:500]
+        return all_items
 
     def update_run_tracker(self, product_id, source="fashionphile"):
         now = datetime.utcnow().isoformat()
