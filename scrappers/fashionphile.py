@@ -37,16 +37,6 @@ class FashionphileScraper:
         self.anthropic_refiner = AnthropicRefiner()
         self.executor = ThreadPoolExecutor(max_workers=20)
 
-        self.condition_map = {
-            "giftable": "Giftable",
-            "new": "New",
-            "excellent": "Excellent",
-            "shows-wear": "Shows Wear",
-            "worn": "Worn",
-            "fair": "Fair",
-            "flawed": "Flawed"
-        }
-
     @backoff.on_exception(
         backoff.expo,
         ScrapflyScrapeError,
@@ -57,22 +47,10 @@ class FashionphileScraper:
         self.logger.debug(f"⏳ Scraping URL: {config.url}")
         async with self.semaphore:
             return await self.client.async_scrape(config)
-        
+
     async def search(self, query, category, product_id, image_query, search_query):
-        self.logger.info(f"🔍 Searching Vestiaire for: {query} across all conditions")
-
-        tasks = [
-            self.search_by_condition(query, category, product_id, image_query, search_query, code, label)
-            for code, label in self.condition_map.items()
-        ]
-
-        all_results = await asyncio.gather(*tasks)
-        flat_results = [item for sublist in all_results for item in sublist]
-        return flat_results
-
-    async def search_by_condition(self, query, category, product_id, image_query, search_query, condition_code, condition_label):
         self.logger.info(f"🔍 Searching Fashionphile for query: {query}")
-        url = f"https://www.fashionphile.com/shop?search={quote(query)}&condition={condition_code}"
+        url = f"https://www.fashionphile.com/shop?search={quote(query)}"
         try:
             resp = await self.scrape_with_retries(ScrapeConfig(
                 url=url,
@@ -115,7 +93,7 @@ class FashionphileScraper:
                     continue
 
                 title = f"{brand_tag.text.strip()} {title_tag.text.strip()}"
-                if not Utility.combined_similarity(title=title, query=query):
+                if not Utility.combined_similarity(title=title, query=query,  threshold=0.55):
                     continue
                 price_text = price_tag.text.strip()
                 price_data = Price.fromstring(price_text)
@@ -123,12 +101,17 @@ class FashionphileScraper:
                 
                 image_url = image_tag["src"] if image_tag and image_tag.has_attr("src") else None
 
-                if(condition_label == "Giftable"):
-                    condition_label = "Like New"
-                elif(condition_label == "Shows Wear"):
-                    condition_label = "Good"
-                elif(condition_label == "Worn" or condition_label == "Flawed"):
-                    condition_label = "Fair"
+                condition_tag = card.find("p", class_="condition")
+                condition_label = "Not present"
+                if condition_tag and "condition:" in condition_tag.text.lower():
+                    raw_condition = condition_tag.text.split(":")[-1].strip()
+                    condition_map = {
+                        "Giftable": "Like New",
+                        "Shows Wear": "Good",
+                        "Worn": "Fair",
+                        "Flawed": "Fair"
+                    }
+                    condition_label = condition_map.get(raw_condition, raw_condition)
 
 
                 size = Utility.extract_size_from_title(title=title)

@@ -44,7 +44,8 @@ class FarfetchScraper:
 
     async def search(self, query, category, product_id, image_query, search_query):
         self.logger.info(f"[Farfetch] 🔍 Searching Farfetch for query: {query}")
-        url = f"https://www.farfetch.com/shopping/men/items.aspx?query={quote(query)}"
+        url = f"https://www.farfetch.com/shopping/men/search/items.aspx?q={quote(query)}&ffref=Search&qr=3"
+
 
         try:
             resp = await self.scrape_with_retries(ScrapeConfig(
@@ -67,64 +68,52 @@ class FarfetchScraper:
 
         html = resp.scrape_result.get("content", "")
         soup = BeautifulSoup(html, "html.parser")
-        items = soup.select("article[data-testid='product-card']")
+        items = soup.select("li[data-testid='productCard']")
 
         results = []
 
         for item in items:
             try:
                 link_tag = item.select_one("a[data-component='ProductCardLink']")
-                product_url = f"https://www.farfetch.com{link_tag['href']}"
-                if is_duplicate_today(url=product_url):
-                    continue
-                
                 brand = item.select_one("p[data-component='ProductCardBrandName']")
-                title = item.select_one("p[data-component='ProductCardDescription']")
-
-                if not Utility.combined_similarity(title=title.text.strip(), query=query, threshold=0.78):
-                    continue
-
+                title_tag = item.select_one("p[data-component='ProductCardDescription']")
                 price_el = item.select_one("p[data-component='PriceFinal']")
-                image_tag = item.select_one("link[itemprop='image']")
-
                 condition_tag = item.select_one("p[data-component='LabelPrimary']")
+                image_tag = item.select_one("img[data-component='ProductCardImagePrimary']")
 
-                if not (brand and title and price_el and link_tag):
+                if not (link_tag and brand and title_tag and price_el and image_tag):
                     continue
 
-                # Extract price
-                price_text = price_el.text.strip()
-                price_data = Price.fromstring(price_text)
+                product_url = f"https://www.farfetch.com{link_tag['href']}"
+                # if is_duplicate_today(url=product_url):
+                #     continue
+
+                title_text = f"{brand.text.strip()} {title_tag.text.strip()}"
+                if not Utility.combined_similarity(title=title_text, query=query, threshold=0.84):
+                    continue
+
+                price_data = Price.fromstring(price_el.text.strip())
                 listing_price = price_data.amount_float
                 currency = price_data.currency or "USD"
 
-                # Build product data
-                
-                image_url = image_tag["href"] if image_tag else None
-                combined_title = f"{brand.text.strip()} {title.text.strip()}"
+                image_url = image_tag["src"]
 
-                # Try to extract size from title
-                size_match = re.search(r'\b(?:Size|EU|US)?\s*([A-Za-z0-9./]+)\b', combined_title)
-                size = size_match.group(1).strip() if size_match else None
+                size = Utility.extract_size_from_title(title=title_text)
                 size = Utility.refine_us_size_string(size)
 
-                if not size:
-                    size = Utility.extract_size_from_title(title=title)
-
                 condition = condition_tag.text.strip() if condition_tag else "New"
-
-                if('vintage' in condition.lower()):
+                if 'vintage' in condition.lower() or 'pre' in condition.lower():
                     condition = "Excellent"
-                elif('pre' in condition.lower()):
-                    condition = "Excellent"
+                elif 'new' in condition.lower():
+                    condition = "New"
                 else:
                     condition = "New"
 
-                location = Utility.extract_location_from_title(title=combined_title)
+                location = Utility.extract_location_from_title(title=title_text)
 
                 result = {
                     "product_id": product_id,
-                    "title": combined_title,
+                    "title": title_text,
                     "listing_price": listing_price,
                     "original_price": None,
                     "discount": None,
