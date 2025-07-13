@@ -74,7 +74,7 @@ class StockXFetcher:
                 self.logger.error(f"❌ Error for {item.get('canonical_name')}: {e}")
                 return None
 
-    async def run(self, single_product: dict = None):
+    async def run(self, products: list = None):
         items = [single_product] if single_product else self.fetch_all_items()
         self.logger.info(f"🔧 Beginning processing of {len(items)} item(s)...")
 

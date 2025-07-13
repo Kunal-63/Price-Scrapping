@@ -1,7 +1,5 @@
 import asyncio
-import time
 from datetime import datetime
-import boto3
 from boto3.session import Session
 
 from fetch_scripts.fetch_ebay import EbayFetcher
@@ -12,14 +10,14 @@ from fetch_scripts.fetch_rebag import RebagFetcher
 from fetch_scripts.fetch_stockx import StockXFetcher
 from utils.email import send_email
 
-# Map source to (fetcher class, concurrency limit)
+# Map source to fetcher class only
 FETCHER_MAP = {
-    "ebay": (EbayFetcher, 20),
-    "google": (GoogleFetcher, 20),
-    "farfetch": (FarFetchFetcher, 15),
-    "fashionphile": (FashionphileFetcher, 15),
-    "rebag": (RebagFetcher, 15),
-    "stockx": (StockXFetcher, 5)
+    "ebay": EbayFetcher,
+    "google": GoogleFetcher,
+    "farfetch": FarFetchFetcher,
+    "fashionphile": FashionphileFetcher,
+    "rebag": RebagFetcher,
+    "stockx": StockXFetcher
 }
 
 class Scheduler:
@@ -50,19 +48,10 @@ class Scheduler:
         response = self.product_table.get_item(Key={"product_id": product_id})
         return response.get("Item")
 
-    async def run_source_group(self, source, product_ids, fetcher_cls, concurrency_limit):
-        fetcher = fetcher_cls(concurrency=concurrency_limit)
-        tasks = []
-
-        for product_id in product_ids[:concurrency_limit]:
-            product = self.get_product_details(product_id)
-            if product:
-                tasks.append(fetcher.run(single_product=product))
-            else:
-                print(f"⚠️ Product not found in DB: {product_id}")
-
-        await asyncio.gather(*tasks)
-        print(f"✅ Finished processing {len(tasks)} {source} products.")
+    async def run_source_group(self, source, products, fetcher_cls):
+        print(f"⚙️ Running {source} fetcher for {len(products)} products")
+        fetcher = fetcher_cls()
+        await fetcher.run(products=products)
 
     async def run_due_fetchers(self):
         due = self.get_due_products()
@@ -72,22 +61,39 @@ class Scheduler:
 
         print(f"🔁 {len(due)} product(s) due for fetch.")
 
+        product_ids = {product_id for product_id, _ in due}
+
+        # Load all product metadata once
+        product_data_map = {}
+        for product_id in product_ids:
+            item = self.get_product_details(product_id)
+            if item:
+                product_data_map[product_id] = item
+            else:
+                print(f"⚠️ Product not found: {product_id}")
+
+        # Group by source
         grouped = {}
         for product_id, source in due:
             if source not in FETCHER_MAP:
                 print(f"⚠️ Unsupported source: {source}")
                 continue
-            grouped.setdefault(source, []).append(product_id)
+            product = product_data_map.get(product_id)
+            if product:
+                grouped.setdefault(source, []).append(product)
 
+        # Run all fetchers
         tasks = []
-        for source, product_ids in grouped.items():
-            fetcher_cls, max_concurrent = FETCHER_MAP[source]
-            tasks.append(self.run_source_group(source, product_ids, fetcher_cls, max_concurrent))
+        for source, product_list in grouped.items():
+            fetcher_cls = FETCHER_MAP[source]
+            tasks.append(self.run_source_group(source, product_list, fetcher_cls))
 
         await asyncio.gather(*tasks)
+
+        # Send summary
         summary = f"✅ {sum(len(p) for p in grouped.values())} products fetched:\n"
-        for source, ids in grouped.items():
-            summary += f"- {source}: {len(ids)}\n"
+        for source, items in grouped.items():
+            summary += f"- {source}: {len(items)}\n"
 
         send_email("🗂️ Scraper Run Summary", summary)
         print("✅ All due fetchers completed.")
