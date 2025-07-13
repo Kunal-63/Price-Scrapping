@@ -85,8 +85,8 @@ class FarfetchScraper:
                     continue
 
                 product_url = f"https://www.farfetch.com{link_tag['href']}"
-                # if is_duplicate_today(url=product_url):
-                #     continue
+                if is_duplicate_today(url=product_url):
+                    continue
 
                 title_text = f"{brand.text.strip()} {title_tag.text.strip()}"
                 if not Utility.combined_similarity(title=title_text, query=query, threshold=0.84):
