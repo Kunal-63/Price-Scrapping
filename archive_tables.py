@@ -8,10 +8,10 @@ import time
 from utils.email import send_email
 
 # AWS session and tables
-session = Session(profile_name='auricore-dev-kunal')
+session = Session()
 dynamodb = session.resource("dynamodb", region_name="us-east-1")
 product_table = dynamodb.Table("ProductsTable")
-archive_table = dynamodb.Table("ArchiveTable")
+archive_table = dynamodb.Table("ArchiveProductsTable")
 
 def is_older_than(iso_date: str, cutoff: datetime) -> bool:
     try:
