@@ -79,7 +79,7 @@ def archive_products_before(date_str: str):
     # Delete originals
     with product_table.batch_writer() as delete_batch:
         for item in old_items:
-            delete_batch.delete_item(Key={"product_id": item["product_id"]})
+            delete_batch.delete_item(Key={"id": item["id"]})
 
     summary = f"✅ Archived {len(grouped_data)} product entries to column '{archive_date_str}' and deleted them from ProductsTable."
     print(summary)
