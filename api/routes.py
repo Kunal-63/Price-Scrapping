@@ -18,7 +18,7 @@ from boto3.session import Session
 from decimal import Decimal
 from utils.antropic import AnthropicRefiner
 from models.product_item import ProductModel
-from collections import defaultdict
+from collections import defaultdict, Counter
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -280,14 +280,14 @@ async def count_products_by_source(product_id: Optional[str] = None):
                 )
                 all_items.extend(response.get("Items", []))
 
-        product_source_map = defaultdict(set)
+        product_source_counts = defaultdict(Counter)
 
         for item in all_items:
             pid = item.get("product_id", "Unknown")
             source = item.get("source", "Unknown")
-            product_source_map[pid].add(source)
+            product_source_counts[pid][source] += 1
 
-        result = {pid: len(sources) for pid, sources in product_source_map.items()}
+        result = {pid: dict(source_counts) for pid, source_counts in product_source_counts.items()}
 
         return {
             "product_source_counts": result,
@@ -298,7 +298,6 @@ async def count_products_by_source(product_id: Optional[str] = None):
     except Exception as e:
         logger.exception("Error counting products by source")
         return {"error": str(e)}
-
 @router.get("/products_by_condition/")
 async def products_by_condition(condition: str = Query(default=None)):
     try:
