@@ -93,7 +93,7 @@ class FashionphileScraper:
                     continue
 
                 title = f"{brand_tag.text.strip()} {title_tag.text.strip()}"
-                if not Utility.combined_similarity(title=title, query=query,  threshold=0.55):
+                if not Utility.combined_similarity(title=title, query=query,  threshold=0.6):
                     continue
                 price_text = price_tag.text.strip()
                 price_data = Price.fromstring(price_text)

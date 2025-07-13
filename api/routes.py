@@ -21,7 +21,7 @@ from models.product_item import ProductModel
 from collections import defaultdict
 
 router = APIRouter()
-logger = get_logger()
+logger = get_logger(__name__)
 
 session = Session()
 dynamodb = session.resource("dynamodb", region_name="us-east-1")
@@ -252,12 +252,11 @@ async def fetch_product_by_id(input_data: ProductIdInput):
         return {"error": str(e)}
 
 @router.get("/count_by_source/")
-async def countc_products_by_source(product_id: Optional[str] = None):
+async def count_products_by_source(product_id: Optional[str] = None):
     try:
         all_items = []
 
         if product_id:
-            # Query using GSI if product_id is provided
             response = product_table.query(
                 IndexName="ProductIdIndex",
                 KeyConditionExpression=Key("product_id").eq(product_id)
@@ -272,7 +271,6 @@ async def countc_products_by_source(product_id: Optional[str] = None):
                 )
                 all_items.extend(response.get("Items", []))
         else:
-            # Full scan if no product_id is given
             response = product_table.scan()
             all_items.extend(response.get("Items", []))
 
@@ -282,14 +280,18 @@ async def countc_products_by_source(product_id: Optional[str] = None):
                 )
                 all_items.extend(response.get("Items", []))
 
-        source_counts = defaultdict(int)
+        product_source_map = defaultdict(set)
+
         for item in all_items:
+            pid = item.get("product_id", "Unknown")
             source = item.get("source", "Unknown")
-            source_counts[source] += 1
+            product_source_map[pid].add(source)
+
+        result = {pid: len(sources) for pid, sources in product_source_map.items()}
 
         return {
-            "total_products": len(all_items),
-            "counts_by_source": dict(source_counts),
+            "product_source_counts": result,
+            "total_products": len(result),
             "filtered_by_product_id": bool(product_id)
         }
 
