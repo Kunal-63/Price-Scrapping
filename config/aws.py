@@ -4,6 +4,6 @@ class AwsConfig:
     AWS_REGION = "us-east-1"
     AWS_USERNAME = "sc2"
     PRODUCT_TABLE = "ProductsTable"
-    SCRAPER_TRACKING_TABLE = "ScraperRunTable"
+    SCRAPER_TRACKING_TABLE = "ScraperRunTracker"
     FINAL_PRODUCT_TABLE = "FinalProductsTable"
     ARCHIVE_PRODUCTS_TABLE = "ArchiveProductsTable"
