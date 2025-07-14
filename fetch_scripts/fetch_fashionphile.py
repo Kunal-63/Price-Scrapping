@@ -32,7 +32,7 @@ class FashionphileFetcher:
             all_items.extend(response.get("Items", []))
 
         self.logger.info(f"📦 Total items fetched from DynamoDB: {len(all_items)}")
-        return all_items[:50]
+        return all_items[:1000]
 
     def update_run_tracker(self, product_id, source="fashionphile"):
         now = datetime.utcnow().isoformat()
@@ -82,4 +82,4 @@ class FashionphileFetcher:
         await asyncio.gather(*tasks)
 
         total_time = time.time() - start_all
-        self.logger.info
+        self.logger.info(f"✅ All items processed in {total_time:.2f} seconds")

@@ -6,7 +6,6 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, HttpUrl
 from typing import Optional, List, Dict
 from sqlalchemy.ext.asyncio import AsyncSession
-from config.database import async_session
 from schemas.product_item import ProductItem
 from sqlalchemy.future import select
 from fuzzywuzzy import fuzz
@@ -19,6 +18,8 @@ from decimal import Decimal
 from utils.antropic import AnthropicRefiner
 from models.product_item import ProductModel
 from collections import defaultdict, Counter
+from schemas.productId_input import ProductIdInput
+from schemas.search_input import SearchInput
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -26,24 +27,7 @@ logger = get_logger(__name__)
 session = Session()
 dynamodb = session.resource("dynamodb", region_name="us-east-1")
 product_table = dynamodb.Table("ProductsTable")
-
-class ProductIdInput(BaseModel):
-    product_id: Optional[str] = None
-    query: Optional[str] = None
-    filters: Optional[Dict[str, str]] = None
-    limit: Optional[int] = 10
-    last_evaluated_key: Optional[Dict] = None
-    group_by: Optional[str] = None
-    sort_by: Optional[str] = None  # New
-    sort_order: Optional[str] = "asc"  # "asc" or "desc"
-
-
-class SearchInput(BaseModel):
-    query: Optional[str] = None
-    category: Optional[str] = None
-    image_url: Optional[HttpUrl] = None
-    product_id: Optional[str] = None
-
+final_table = dynamodb.Table('FinalProductsTable')
 
 @router.post("/insert/")
 async def search_and_store(input_data: SearchInput):
@@ -347,3 +331,32 @@ async def products_by_condition(condition: str = Query(default=None)):
 
     except Exception as e:
         return {"error": str(e)}
+    
+@router.get("/missing-products", response_model=List[str])
+async def get_missing_products(limit: int = Query(50, gt=0, le=500)):
+    def check_if_product_exists(product_id: str) -> bool:
+        resp = product_table.query(
+            IndexName='ProductIdIndex',
+            KeyConditionExpression=Key('product_id').eq(product_id),
+            Limit=1
+        )
+        return bool(resp.get('Items'))
+
+    response = final_table.scan(ProjectionExpression="product_id")
+    all_product_ids = [item['product_id'] for item in response.get('Items', [])]
+
+    while 'LastEvaluatedKey' in response and len(all_product_ids) < limit * 3:
+        response = final_table.scan(
+            ProjectionExpression="product_id",
+            ExclusiveStartKey=response['LastEvaluatedKey']
+        )
+        all_product_ids += [item['product_id'] for item in response.get('Items', [])]
+
+    missing = []
+
+    async def check(pid):
+        if not await asyncio.to_thread(check_if_product_exists, pid):
+            missing.append(pid)
+
+    await asyncio.gather(*[check(pid) for pid in all_product_ids])
+    return missing[:limit]

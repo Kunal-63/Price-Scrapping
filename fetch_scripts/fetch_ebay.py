@@ -32,7 +32,7 @@ class EbayFetcher:
             all_items.extend(response.get("Items", []))
 
         self.logger.info(f"📦 Total items fetched from DynamoDB: {len(all_items)}")
-        return all_items[:50]
+        return all_items[:1000]
 
     def update_run_tracker(self, product_id, source="ebay"):
         now = datetime.utcnow().isoformat()
