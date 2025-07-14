@@ -20,14 +20,16 @@ from models.product_item import ProductModel
 from collections import defaultdict, Counter
 from schemas.productId_input import ProductIdInput
 from schemas.search_input import SearchInput
+from config.aws import AwsConfig
+
 
 router = APIRouter()
 logger = get_logger(__name__)
 
 session = Session()
-dynamodb = session.resource("dynamodb", region_name="us-east-1")
-product_table = dynamodb.Table("ProductsTable")
-final_table = dynamodb.Table('FinalProductsTable')
+dynamodb = session.resource("dynamodb", region_name=AwsConfig.AWS_REGION)
+product_table = dynamodb.Table(AwsConfig.PRODUCT_TABLE)
+final_table = dynamodb.Table(AwsConfig.FINAL_PRODUCT_TABLE)
 
 @router.post("/insert/")
 async def search_and_store(input_data: SearchInput):

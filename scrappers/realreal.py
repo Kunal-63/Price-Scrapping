@@ -13,6 +13,7 @@ from utils.antropic import AnthropicRefiner
 from boto3.session import Session
 from boto3.dynamodb.conditions import Attr
 from config.scrapper_config import Config
+from config.aws import AwsConfig
 
 import backoff
 
@@ -22,8 +23,8 @@ class RealRealScraper:
         self.logger = get_logger()
 
         session = Session()
-        dynamodb = session.resource("dynamodb", region_name="us-east-1")
-        self.product_table = dynamodb.Table("ProductsTable")
+        dynamodb = session.resource("dynamodb", region_name=AwsConfig.AWS_REGION)
+        self.product_table = dynamodb.Table(AwsConfig.PRODUCT_TABLE)
         self.shoes_table = dynamodb.Table("ShoesTable")
         self.bags_table = dynamodb.Table("BagsTable")
         self.accessories_table = dynamodb.Table("AccessoriesTable")

@@ -9,6 +9,7 @@ from fetch_scripts.fetch_google import GoogleFetcher
 from fetch_scripts.fetch_rebag import RebagFetcher
 from fetch_scripts.fetch_stockx import StockXFetcher
 from utils.email import send_email
+from config.aws import AwsConfig
 
 # Map source to fetcher class only
 FETCHER_MAP = {
@@ -23,9 +24,9 @@ FETCHER_MAP = {
 class Scheduler:
     def __init__(self):
         session = Session()
-        self.dynamodb = session.resource("dynamodb", region_name="us-east-1")
-        self.tracker_table = self.dynamodb.Table("ScraperRunTracker")
-        self.product_table = self.dynamodb.Table("FinalProductsTable")
+        self.dynamodb = session.resource("dynamodb", region_name=AwsConfig.AWS_REGION)
+        self.tracker_table = self.dynamodb.Table(AwsConfig.SCRAPER_TRACKING_TABLE)
+        self.product_table = self.dynamodb.Table(AwsConfig.FINAL_PRODUCT_TABLE)
 
     def get_due_products(self):
         now = datetime.utcnow().isoformat()

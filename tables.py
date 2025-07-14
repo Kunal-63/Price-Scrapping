@@ -2,6 +2,8 @@ import boto3
 from boto3.session import Session
 from botocore.exceptions import ClientError
 
+from config.aws import AwsConfig
+
 def create_table_if_not_exists(dynamodb, table_name, key_name, key_type='S'):
     try:
         existing_tables = dynamodb.meta.client.list_tables()['TableNames']
@@ -127,9 +129,9 @@ def delete_all_items_from_table(dynamodb, table_name):
 
 if __name__ == "__main__":
     session = Session()
-    dynamodb = session.resource("dynamodb", region_name="us-east-1")
+    dynamodb = session.resource("dynamodb", region_name=AwsConfig.AWS_REGION)
 
     # Create table with product_id as GSI
-    # create_table_if_not_exists(dynamodb, "ProductsTable", "id")
-    delete_all_items_from_table(dynamodb, "ProductsTable")
+    # create_table_if_not_exists(dynamodb, AwsConfig.PRODUCT_TABLE, "id")
+    delete_all_items_from_table(dynamodb, AwsConfig.PRODUCT_TABLE)
 

@@ -2,9 +2,11 @@ from datetime import datetime
 import boto3
 from boto3.session import Session
 
+from config.aws import AwsConfig
+
 session = Session()
-dynamodb = session.resource("dynamodb", region_name="us-east-1")
-product_table = dynamodb.Table("ProductsTable")
+dynamodb = session.resource("dynamodb", region_name=AwsConfig.AWS_REGION)
+product_table = dynamodb.Table(AwsConfig.PRODUCT_TABLE)
 
 def is_duplicate_today(url: str) -> bool:
     today_str = datetime.utcnow().date().isoformat()

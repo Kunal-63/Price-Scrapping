@@ -5,6 +5,7 @@ from price_parser import Price
 import asyncio
 import numpy as np
 import re
+from config.aws import AwsConfig
 from utils.logger import get_logger
 from utils.utility import Utility
 from config.scrapper_config import Config
@@ -24,8 +25,8 @@ class StockXScraper:
         self.semaphore = asyncio.Semaphore(5)
 
         session = Session()
-        dynamodb = session.resource("dynamodb", region_name="us-east-1")
-        self.product_table = dynamodb.Table("ProductsTable")
+        dynamodb = session.resource("dynamodb", region_name=AwsConfig.AWS_REGION)
+        self.product_table = dynamodb.Table(AwsConfig.PRODUCT_TABLE)
 
     @backoff.on_exception(
         backoff.expo,

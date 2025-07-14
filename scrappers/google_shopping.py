@@ -3,6 +3,7 @@ import re
 import uuid
 from urllib.parse import quote
 from scrapfly import ScrapflyClient, ScrapeConfig
+from config.aws import AwsConfig
 from utils.logger import get_logger
 from bs4 import BeautifulSoup
 from utils.utility import Utility
@@ -19,8 +20,8 @@ class GoogleShoppingScraper:
         self.logger = get_logger()
 
         session = Session()
-        dynamodb = session.resource("dynamodb", region_name="us-east-1")
-        self.product_table = dynamodb.Table("ProductsTable")
+        dynamodb = session.resource("dynamodb", region_name=AwsConfig.AWS_REGION)
+        self.product_table = dynamodb.Table(AwsConfig.PRODUCT_TABLE)
         self.shoes_table = dynamodb.Table("ShoesTable")
         self.bags_table = dynamodb.Table("BagsTable")
         self.accessories_table = dynamodb.Table("AccessoriesTable")
@@ -159,23 +160,3 @@ class GoogleShoppingScraper:
             self.logger.info(f"➕ Inserting new product in DB: {base_data['url']}")
 
         self.product_table.put_item(Item=product.to_dict())
-
-        specs = {
-            "Brand": base_data.get("title", "").split(" ")[0],
-            "Condition": base_data.get("condition", "Unknown"),
-        }
-
-        if category == "Shoes":
-            meta = ShoesModel(product.product_id, specs, base_data["url"])
-            self.shoes_table.put_item(Item=meta.to_dict())
-        elif category == "Bags":
-            meta = BagsModel(product.product_id, specs, base_data["url"])
-            self.bags_table.put_item(Item=meta.to_dict())
-        elif category == "Accessories":
-            meta = AccessoriesModel(product.product_id, specs, base_data["url"])
-            self.accessories_table.put_item(Item=meta.to_dict())
-        elif category == "Clothing":
-            meta = ClothingModel(product.product_id, specs, base_data["url"])
-            self.clothing_table.put_item(Item=meta.to_dict())
-        else:
-            self.logger.warning(f"❌ Unknown category: {category}, skipping metadata.")

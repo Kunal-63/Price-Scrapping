@@ -15,6 +15,8 @@ from price_parser.parser import Price
 import backoff
 from utils.antropic import AnthropicRefiner
 from utils.database import is_duplicate_today
+from config.aws import AwsConfig
+
 
 class RebagScraper:
     def __init__(self, scrapfly_key):
@@ -22,8 +24,8 @@ class RebagScraper:
         self.logger = get_logger()
 
         session = Session()
-        dynamodb = session.resource("dynamodb", region_name="us-east-1")
-        self.product_table = dynamodb.Table("ProductsTable")
+        dynamodb = session.resource("dynamodb", region_name=AwsConfig.AWS_REGION)
+        self.product_table = dynamodb.Table(AwsConfig.PRODUCT_TABLE)
         
         self.semaphore = asyncio.Semaphore(10)
         self.anthropic_refiner = AnthropicRefiner()
@@ -111,12 +113,18 @@ class RebagScraper:
 
                 location = Utility.extract_location_from_title(title=title)
 
-                if(condition == "Great"):
+                condition_raw = condition.strip().lower()
+
+                if "pristine" in condition_raw:
+                    condition = "Like New"
+                elif "excellent" in condition_raw:
+                    condition = "Excellent"
+                elif "great" in condition_raw or "very good" in condition_raw:
                     condition = "Good"
-                elif(condition == "Very Good"):
-                    condition = "Good"
-                elif(condition == "Good"):
+                elif "good condition" in condition_raw:
                     condition = "Fair"
+                else:
+                    condition = "Good"
 
                 base_data = {
                     "product_id": product_id,

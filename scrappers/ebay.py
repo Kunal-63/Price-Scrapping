@@ -15,6 +15,8 @@ from config.scrapper_config import Config
 from utils.antropic import AnthropicRefiner
 import backoff
 from utils.database import is_duplicate_today
+from config.aws import AwsConfig
+
 
 class EbayScraper:
     def __init__(self, scrapfly_key):
@@ -24,8 +26,8 @@ class EbayScraper:
         self.executor = ThreadPoolExecutor(max_workers=20)
 
         session = Session()
-        dynamodb = session.resource("dynamodb", region_name="us-east-1")
-        self.product_table = dynamodb.Table("ProductsTable")
+        dynamodb = session.resource("dynamodb", region_name=AwsConfig.AWS_REGION)
+        self.product_table = dynamodb.Table(AwsConfig.PRODUCT_TABLE)
         self.anthropic_refiner = AnthropicRefiner()
 
     async def search(self, query, category, product_id, image_query, search_query):

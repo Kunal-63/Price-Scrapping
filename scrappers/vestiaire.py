@@ -2,6 +2,7 @@ import asyncio
 import json
 from urllib.parse import quote
 from scrapfly import ScrapflyClient, ScrapeConfig, ScrapflyScrapeError
+from config.aws import AwsConfig
 from utils.utility import Utility
 from utils.logger import get_logger
 from boto3.session import Session
@@ -19,8 +20,8 @@ class VestiaireScraper:
         self.logger = get_logger()
 
         session = Session()
-        dynamodb = session.resource("dynamodb", region_name="us-east-1")
-        self.product_table = dynamodb.Table("ProductsTable")
+        dynamodb = session.resource("dynamodb", region_name=AwsConfig.AWS_REGION)
+        self.product_table = dynamodb.Table(AwsConfig.PRODUCT_TABLE)
         self.bags_table = dynamodb.Table("BagsTable")
         self.shoes_table = dynamodb.Table("ShoesTable")
         self.accessories_table = dynamodb.Table("AccessoriesTable")

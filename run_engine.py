@@ -3,10 +3,11 @@ import time
 import boto3
 from boto3.session import Session
 from utils.product_engine import ProductSearchEngine
+from config.aws import AwsConfig
 
 session = Session()
-dynamodb = session.resource("dynamodb", region_name="us-east-1")
-table = dynamodb.Table("FinalProductsTable")
+dynamodb = session.resource("dynamodb", region_name=AwsConfig.AWS_REGION)
+table = dynamodb.Table(AwsConfig.FINAL_PRODUCT_TABLE)
 
 CONCURRENCY = 6
 

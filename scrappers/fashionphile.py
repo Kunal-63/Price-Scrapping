@@ -5,6 +5,7 @@ import asyncio
 from urllib.parse import quote, urljoin
 from scrapfly import ScrapflyClient, ScrapeConfig, ScrapflyScrapeError
 from bs4 import BeautifulSoup
+from config.aws import AwsConfig
 from utils.logger import get_logger
 from utils.utility import Utility
 from models.product_item import ProductModel
@@ -24,8 +25,8 @@ class FashionphileScraper:
         self.logger = get_logger()
 
         session = Session()
-        dynamodb = session.resource("dynamodb", region_name="us-east-1")
-        self.product_table = dynamodb.Table("ProductsTable")
+        dynamodb = session.resource("dynamodb", region_name=AwsConfig.AWS_REGION)
+        self.product_table = dynamodb.Table(AwsConfig.PRODUCT_TABLE)
         self.shoes_table = dynamodb.Table("ShoesTable")
         self.bags_table = dynamodb.Table("BagsTable")
         self.accessories_table = dynamodb.Table("AccessoriesTable")

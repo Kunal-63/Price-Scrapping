@@ -6,12 +6,13 @@ from collections import defaultdict
 import schedule
 import time
 from utils.email import send_email
+from config.aws import AwsConfig
 
 # AWS session and tables
 session = Session()
-dynamodb = session.resource("dynamodb", region_name="us-east-1")
-product_table = dynamodb.Table("ProductsTable")
-archive_table = dynamodb.Table("ArchiveProductsTable")
+dynamodb = session.resource("dynamodb", region_name=AwsConfig.AWS_REGION)
+product_table = dynamodb.Table(AwsConfig.PRODUCT_TABLE)
+archive_table = dynamodb.Table(AwsConfig.ARCHIVE_PRODUCTS_TABLE)
 
 def is_older_than(iso_date: str, cutoff: datetime) -> bool:
     try:
@@ -81,7 +82,7 @@ def archive_products_before(date_str: str):
         for item in old_items:
             delete_batch.delete_item(Key={"id": item["id"]})
 
-    summary = f"✅ Archived {len(grouped_data)} product entries to column '{archive_date_str}' and deleted them from ProductsTable."
+    summary = f"✅ Archived {len(grouped_data)} product entries to column '{archive_date_str}' and deleted them from {AwsConfig.PRODUCT_TABLE}."
     print(summary)
     send_email("DynamoDB Archiving Report", summary)
 

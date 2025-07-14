@@ -2,6 +2,7 @@ import re
 from urllib.parse import quote
 from scrapfly import ScrapflyClient, ScrapeConfig, ScrapflyScrapeError
 from bs4 import BeautifulSoup
+from config.aws import AwsConfig
 from utils.utility import Utility
 from utils.logger import get_logger
 from boto3.session import Session
@@ -20,8 +21,8 @@ class WatchChartsScraper:
         self.logger = get_logger()
 
         session = Session()
-        dynamodb = session.resource("dynamodb", region_name="us-east-1")
-        self.product_table = dynamodb.Table("ProductsTable")
+        dynamodb = session.resource("dynamodb", region_name=AwsConfig.AWS_REGION)
+        self.product_table = dynamodb.Table(AwsConfig.PRODUCT_TABLE)
 
         self.scrape_semaphore = asyncio.Semaphore(5)
         self.parse_semaphore = asyncio.Semaphore(20)

@@ -2,6 +2,7 @@ import re
 import json
 import asyncio
 import httpx
+from config.aws import AwsConfig
 from config.scrapper_config import Config
 from utils.logger import get_logger
 from utils.utility import Utility
@@ -17,8 +18,8 @@ class SerpAPISearcher:
     def __init__(self):
         self.logger = get_logger()
         session = Session()
-        dynamodb = session.resource("dynamodb", region_name="us-east-1")
-        self.product_table = dynamodb.Table("ProductsTable")
+        dynamodb = session.resource("dynamodb", region_name=AwsConfig.AWS_REGION)
+        self.product_table = dynamodb.Table(AwsConfig.PRODUCT_TABLE)
         self.semaphore = asyncio.Semaphore(10)
         self.anthropic_refiner = AnthropicRefiner()
 

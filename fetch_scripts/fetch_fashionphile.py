@@ -8,6 +8,8 @@ from utils.logger import get_logger
 from scrappers.fashionphile import FashionphileScraper
 from config.scrapper_config import Config
 from config.scrapping_tracker_config import ScrappingTrakcerConfig
+from config.aws import AwsConfig
+
 
 class FashionphileFetcher:
     def __init__(self, concurrency: int = 15):
@@ -16,9 +18,9 @@ class FashionphileFetcher:
         self.semaphore = asyncio.Semaphore(concurrency)
 
         self.session = Session()
-        self.dynamodb = self.session.resource("dynamodb", region_name="us-east-1")
-        self.table = self.dynamodb.Table("FinalProductsTable")
-        self.tracker = self.dynamodb.Table("ScraperRunTracker")
+        self.dynamodb = self.session.resource("dynamodb", region_name=AwsConfig.AWS_REGION)
+        self.table = self.dynamodb.Table(AwsConfig.FINAL_PRODUCT_TABLE)
+        self.tracker = self.dynamodb.Table(AwsConfig.SCRAPER_TRACKING_TABLE)
         self.scraper = FashionphileScraper(Config.SCRAPFLY_KEY)
 
     def fetch_all_items(self):

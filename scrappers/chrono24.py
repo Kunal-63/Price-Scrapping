@@ -9,6 +9,7 @@ from boto3.dynamodb.conditions import Key
 import backoff
 from concurrent.futures import ThreadPoolExecutor
 from price_parser import Price
+from config.aws import AwsConfig
 from utils.logger import get_logger
 from utils.utility import Utility
 from utils.antropic import AnthropicRefiner
@@ -24,8 +25,8 @@ class Chrono24Scraper:
         self.semaphore = asyncio.Semaphore(10)
 
         session = Session()
-        dynamodb = session.resource("dynamodb", region_name="us-east-1")
-        self.product_table = dynamodb.Table("ProductsTable")
+        dynamodb = session.resource("dynamodb", region_name=AwsConfig.AWS_REGION)
+        self.product_table = dynamodb.Table(AwsConfig.PRODUCT_TABLE)
         self.executor = ThreadPoolExecutor(max_workers=8)
 
 
