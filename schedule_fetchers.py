@@ -65,12 +65,15 @@ class Scheduler:
 
         # Load all product metadata once
         product_data_map = {}
+        missing_products = []
+
         for product_id in product_ids:
             item = self.get_product_details(product_id)
             if item:
                 product_data_map[product_id] = item
             else:
                 print(f"⚠️ Product not found: {product_id}")
+                missing_products.append(product_id)
 
         # Group by source
         grouped = {}
@@ -95,8 +98,11 @@ class Scheduler:
         for source, items in grouped.items():
             summary += f"- {source}: {len(items)}\n"
 
+        if missing_products:
+            summary += f"\n❌ Missing {len(missing_products)} product(s) in FinalProductsTable:\n"
+            summary += "\n".join(f"- {pid}" for pid in missing_products)
+
         send_email("🗂️ Scraper Run Summary", summary)
-        print("✅ All due fetchers completed.")
 
 async def poll_every_hour():
     scheduler = Scheduler()
