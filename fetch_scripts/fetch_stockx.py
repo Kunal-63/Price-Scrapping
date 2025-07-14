@@ -75,7 +75,7 @@ class StockXFetcher:
                 return None
 
     async def run(self, products: list = None):
-        items = [single_product] if single_product else self.fetch_all_items()
+        items = products if products else self.fetch_all_items()
         self.logger.info(f"🔧 Beginning processing of {len(items)} item(s)...")
 
         start_all = time.time()
