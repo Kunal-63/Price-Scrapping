@@ -14,7 +14,7 @@ from boto3.dynamodb.conditions import Attr
 from config.scrapper_config import Config
 from utils.antropic import AnthropicRefiner
 import backoff
-from utils.database import is_duplicate_today
+from utils.database import is_duplicate_today, is_duplicate_by_id
 from config.aws import AwsConfig
 
 
@@ -104,7 +104,7 @@ class EbayScraper:
                 for item in items:
                     tasks.append(self._parse_item(
                         item, sem, product_id, image_query, query,
-                        category, listings, products_to_insert
+                        category, listings, products_to_insert, "ebay-active"
                     ))
             except Exception as e:
                 self.logger.exception(f"❌ Failed to parse response content: {e}")
@@ -149,7 +149,7 @@ class EbayScraper:
         items = soup.select(".s-item")
 
         tasks = [
-            self._parse_item(item, sem, product_id=product_id, image_query=image_query, search_query=query, category=category, listings=listings, products_to_insert=products_to_insert)
+            self._parse_item(item, sem, product_id=product_id, image_query=image_query, search_query=query, category=category, listings=listings, products_to_insert=products_to_insert, source="ebay-sold")
             for item in items
         ]
 
@@ -161,7 +161,7 @@ class EbayScraper:
         self.logger.info(f"[eBay] ✅ Sold listings fetched and parsed: {len(listings)}")
         return listings
 
-    async def _parse_item(self, item, sem, product_id, image_query, search_query, category, listings, products_to_insert):
+    async def _parse_item(self, item, sem, product_id, image_query, search_query, category, listings, products_to_insert, source):
         async with sem:
             try:
                 link_el = item.select_one("a.s-item__link")
@@ -169,7 +169,7 @@ class EbayScraper:
                 if not detail_url:
                     return
                 
-                if is_duplicate_today(url=detail_url):
+                if is_duplicate_by_id(item_id=detail_url):
                     return
                 
                 title_el = item.select_one(".s-item__title")
@@ -200,6 +200,7 @@ class EbayScraper:
                 size = Utility.extract_size_from_title(title_text)
                 size = Utility.refine_us_size_string(size)
                 location = (item.select_one(".s-item__location").text.strip() if item.select_one(".s-item__location") else "Not specified")
+                location = Utility.refine_location_string(location)
 
                 condition = item.select_one(".SECONDARY_INFO").text.strip() if item.select_one(".SECONDARY_INFO") else (item.select_one(".s-item__seller-info-text") or item.select_one(".s-item__subtitle")).text.replace("Seller:", "").strip() if (item.select_one(".s-item__seller-info-text") or item.select_one(".s-item__subtitle")) else "Unknown"
                 if('new' in condition.lower()):
@@ -210,6 +211,7 @@ class EbayScraper:
                     condition = "Good"
 
                 base_data = {
+                    "id": detail_url,
                     "title": title_text,
                     "product_id": product_id or str(np.random.randint(100000, 999999)),
                     "listing_price": price_value,
@@ -218,7 +220,7 @@ class EbayScraper:
                     "seller": (item.select_one(".s-item__seller-info-text") or item.select_one(".s-item__subtitle")).text.replace("Seller:", "").strip() if (item.select_one(".s-item__seller-info-text") or item.select_one(".s-item__subtitle")) else "Unknown",
                     "location": location,
                     "top_rated": bool(item.select_one(".s-item__etrs-text")),
-                    "source": 'ebay',
+                    "source": source,
                     "image_query": image_query,
                     "search_query": search_query,
                     "size": size,

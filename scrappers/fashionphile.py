@@ -17,7 +17,7 @@ import backoff
 from utils.antropic import AnthropicRefiner
 from price_parser import Price
 from concurrent.futures import ThreadPoolExecutor
-from utils.database import is_duplicate_today
+from utils.database import is_duplicate_today, is_duplicate_by_id
 
 class FashionphileScraper:
     def __init__(self, scrapfly_key):
@@ -90,7 +90,7 @@ class FashionphileScraper:
                     continue
 
                 url_full = urljoin("https://www.fashionphile.com", link_tag["href"])
-                if is_duplicate_today(url=url):
+                if is_duplicate_by_id(item_id=url_full):
                     continue
 
                 title = f"{brand_tag.text.strip()} {title_tag.text.strip()}"
@@ -121,6 +121,7 @@ class FashionphileScraper:
                 location = Utility.extract_location_from_title(title=title)
 
                 base_data = {
+                    "id": url_full,
                     "title": title,
                     "listing_price": price,
                     "url": url_full,

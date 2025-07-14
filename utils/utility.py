@@ -143,7 +143,8 @@ class Utility:
         if not location:
             return "US"
         location = location.lower().strip()
-        patterns = [
+
+        country_patterns = [
             (r'\b(u\.?s\.?a?|united states( of america)?)\b', 'US'),
             (r'\b(u\.?k\.?|united kingdom|great britain|england)\b', 'UK'),
             (r'\b(eu|europe|european union)\b', 'EU'),
@@ -162,9 +163,11 @@ class Utility:
             (r'\bdubai\b', 'UAE'),
             (r'\bsingapore\b', 'Singapore'),
         ]
-        for pattern, standard in patterns:
+
+        for pattern, standard in country_patterns:
             if re.search(pattern, location):
                 return standard
+
         return "US"
     
     @staticmethod

@@ -14,7 +14,7 @@ from config.scrapper_config import Config
 from price_parser.parser import Price
 import backoff
 from utils.antropic import AnthropicRefiner
-from utils.database import is_duplicate_today
+from utils.database import is_duplicate_today, is_duplicate_by_id
 from config.aws import AwsConfig
 
 
@@ -50,7 +50,7 @@ class RebagScraper:
                 url=url,
                 session=Utility.generate_random_session(),
                 retry=False,
-                timeout=30000,
+                timeout=35000,
                 asp=True,
                 render_js=True,
                 wait_for_selector="div.plp__product",
@@ -78,7 +78,7 @@ class RebagScraper:
                 if not link_tag:
                     continue
                 item_url = link_tag.get("href", "").strip()
-                if is_duplicate_today(url=item_url):
+                if is_duplicate_by_id(item_id=item_url):
                     continue
 
                 image_tag = card.select_one("img")
@@ -127,6 +127,7 @@ class RebagScraper:
                     condition = "Good"
 
                 base_data = {
+                    "id": item_url,
                     "product_id": product_id,
                     "title": f"{brand} {title}",
                     "listing_price": price,

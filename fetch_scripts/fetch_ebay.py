@@ -1,6 +1,7 @@
 import asyncio
 import time
 from datetime import datetime, timedelta
+import uuid
 import boto3
 from boto3.session import Session
 
@@ -21,6 +22,7 @@ class EbayFetcher:
         self.table = self.dynamodb.Table(AwsConfig.FINAL_PRODUCT_TABLE)
         self.tracker = self.dynamodb.Table(AwsConfig.SCRAPER_TRACKING_TABLE)
         self.scraper = EbayScraper(Config.SCRAPFLY_KEY)
+        self.stats_table = self.dynamodb.Table(AwsConfig.SCRAPER_STATS_TABLE)
 
     def fetch_all_items(self):
         """Paginate through DynamoDB scan and return all items."""
@@ -33,7 +35,29 @@ class EbayFetcher:
             all_items.extend(response.get("Items", []))
 
         self.logger.info(f"📦 Total items fetched from DynamoDB: {len(all_items)}")
-        return all_items[:1000]
+        return all_items[:100]
+    
+    def update_stats(self, source: str, active: int, sold: int, products_ran: int, time_taken: float):
+        now = datetime.utcnow().isoformat()
+        run_id = f"{now}_{uuid.uuid4().hex[:6]}"
+
+        try:
+            self.stats_table.put_item(
+                Item={
+                    "source": source,
+                    "run_id": run_id,
+                    "total_active": active,
+                    "total_sold": sold,
+                    "products_ran": products_ran,
+                    "time_taken": round(time_taken, 2),
+                    "timestamp": now  # optional field for sorting
+                }
+            )
+            self.logger.info(
+                f"📊 Stats recorded: {active} active, {sold} sold, {products_ran} products, {time_taken:.2f}s"
+            )
+        except Exception as e:
+            self.logger.error(f"❌ Failed to write ScraperStats: {e}")
 
     def update_run_tracker(self, product_id, source="ebay"):
         now = datetime.utcnow().isoformat()
@@ -80,7 +104,13 @@ class EbayFetcher:
 
         start_all = time.time()
         tasks = [asyncio.create_task(self.process_item(item)) for item in items]
-        await asyncio.gather(*tasks)
-
+        results = await asyncio.gather(*tasks)
         total_time = time.time() - start_all
+
+        # Accumulate stats
+        total_active = sum(len(res.get("active", [])) for res in results if res)
+        total_sold = sum(len(res.get("sold", [])) for res in results if res)
+        products_ran = len(items)
+
+        self.update_stats("ebay", total_active, total_sold, products_ran, total_time)
         self.logger.info(f"✅ All items processed in {total_time:.2f} seconds")

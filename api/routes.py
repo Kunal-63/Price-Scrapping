@@ -21,6 +21,7 @@ from collections import defaultdict, Counter
 from schemas.productId_input import ProductIdInput
 from schemas.search_input import SearchInput
 from config.aws import AwsConfig
+from utils.global_lock import GlobalLockManager
 
 
 router = APIRouter()
@@ -36,6 +37,12 @@ async def search_and_store(input_data: SearchInput):
     if not input_data.query and not input_data.image_url:
         return {"error": "Provide either 'query' or 'image_url'."}
 
+    lock = GlobalLockManager()
+
+    if lock.is_locked():
+        return {"error": "Scraper is currently running. Try again later."}
+
+    lock.acquire("insert_api")
     engine = ProductSearchEngine()
     start_time = time.perf_counter()
 
@@ -48,9 +55,11 @@ async def search_and_store(input_data: SearchInput):
         )
     except Exception as e:
         logger.exception("Search failed")
+        lock.release()
         return {"error": str(e)}
 
     if not combined:
+        lock.release()
         return {"message": "No results found"}
 
     all_items = []
@@ -69,7 +78,8 @@ async def search_and_store(input_data: SearchInput):
                 all_items.append(item)
 
     end_time = time.perf_counter()
-    duration = round(end_time - start_time, 2)  # in seconds
+    duration = round(end_time - start_time, 2)
+    lock.release(time_taken=duration)
 
     return {
         "time_taken_seconds": duration,

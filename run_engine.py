@@ -4,6 +4,7 @@ import boto3
 from boto3.session import Session
 from utils.product_engine import ProductSearchEngine
 from config.aws import AwsConfig
+from utils.global_lock import GlobalLockManager
 
 session = Session()
 dynamodb = session.resource("dynamodb", region_name=AwsConfig.AWS_REGION)
@@ -36,31 +37,42 @@ async def process_item(search_engine, item, semaphore):
             return None
 
 async def process_top_items():
-    search_engine = ProductSearchEngine()
-    semaphore = asyncio.Semaphore(CONCURRENCY)
+    lock = GlobalLockManager()
 
-    response = table.scan()
-    items = response.get("Items", [])
-    print(f"🔍 Retrieved {len(items)} items for processing")
-    
-    half = len(items)//2
-    first_batch = items[:half]
-    second_batch = items[half:]
+    if lock.is_locked():
+        print("⏭️ Skipping run — another scraper is already running.")
+        return
 
+    lock.acquire("run_engine")
     start_all = time.time()
 
-    tasks = [asyncio.create_task(process_item(search_engine, item, semaphore)) for item in first_batch]
+    try:
+        search_engine = ProductSearchEngine()
+        semaphore = asyncio.Semaphore(CONCURRENCY)
 
-    await asyncio.sleep(10)
-    print("⏳ Launching second batch after 10 seconds...")
-    tasks += [asyncio.create_task(process_item(search_engine, item, semaphore)) for item in second_batch]
+        response = table.scan()
+        items = response.get("Items", [])
+        print(f"🔍 Retrieved {len(items)} items for processing")
 
-    await asyncio.gather(*tasks)
+        half = len(items) // 2
+        first_batch = items[:half]
+        second_batch = items[half:]
 
-    total_time = time.time() - start_all
-    print(f"✅ All items processed in {total_time:.2f} seconds")
+        tasks = [asyncio.create_task(process_item(search_engine, item, semaphore)) for item in first_batch]
 
-    await asyncio.gather(*tasks)
+        await asyncio.sleep(10)
+        print("⏳ Launching second batch after 10 seconds...")
+        tasks += [asyncio.create_task(process_item(search_engine, item, semaphore)) for item in second_batch]
+
+        await asyncio.gather(*tasks)
+
+        total_time = time.time() - start_all
+        print(f"✅ All items processed in {total_time:.2f} seconds")
+        lock.release(time_taken=total_time)
+
+    except Exception as e:
+        print(f"❌ Error during engine run: {e}")
+        lock.release()
 
 if __name__ == "__main__":
     asyncio.run(process_top_items())

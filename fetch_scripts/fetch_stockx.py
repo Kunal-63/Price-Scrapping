@@ -1,6 +1,7 @@
 import asyncio
 import time
 from datetime import datetime, timedelta
+import uuid
 import boto3
 from boto3.session import Session
 
@@ -20,6 +21,8 @@ class StockXFetcher:
         self.dynamodb = self.session.resource("dynamodb", region_name=AwsConfig.AWS_REGION)
         self.table = self.dynamodb.Table(AwsConfig.FINAL_PRODUCT_TABLE)
         self.tracker = self.dynamodb.Table(AwsConfig.SCRAPER_TRACKING_TABLE)
+        self.stats_table = self.dynamodb.Table(AwsConfig.SCRAPER_STATS_TABLE)
+
         self.scraper = StockXScraper(Config.SCRAPFLY_KEY)
 
     def fetch_all_items(self):
@@ -33,7 +36,7 @@ class StockXFetcher:
             all_items.extend(response.get("Items", []))
 
         self.logger.info(f"📦 Total items fetched from DynamoDB: {len(all_items)}")
-        return all_items[:1000]
+        return all_items[:100]
 
     def update_run_tracker(self, product_id, source="stockx"):
         now = datetime.utcnow().isoformat()
@@ -45,6 +48,25 @@ class StockXFetcher:
             "last_run": now,
             "next_run": next_run
         })
+
+    def update_stats(self, source: str, total_results: int, products_ran: int, time_taken: float):
+        now = datetime.utcnow().isoformat()
+        run_id = f"{now}_{uuid.uuid4().hex[:6]}"
+
+        try:
+            self.stats_table.put_item(
+                Item={
+                    "source": source,
+                    "run_id": run_id,
+                    "total_results": total_results,
+                    "products_ran": products_ran,
+                    "time_taken": round(time_taken, 2),
+                    "timestamp": now
+                }
+            )
+            self.logger.info(f"📊 Stats recorded: {total_results} results, {products_ran} products, {time_taken:.2f}s")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to write ScraperStats: {e}")
 
     async def process_item(self, item):
         async with self.semaphore:
@@ -81,7 +103,11 @@ class StockXFetcher:
 
         start_all = time.time()
         tasks = [asyncio.create_task(self.process_item(item)) for item in items]
-        await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks)
 
         total_time = time.time() - start_all
+        total_results = sum(results)
+        products_ran = len(items)
+
+        self.update_stats("stockx", total_results, products_ran, total_time)
         self.logger.info(f"✅ All items processed in {total_time:.2f} seconds")

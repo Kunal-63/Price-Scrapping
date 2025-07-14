@@ -7,3 +7,5 @@ class AwsConfig:
     SCRAPER_TRACKING_TABLE = "ScraperRunTracker"
     FINAL_PRODUCT_TABLE = "FinalProductsTable"
     ARCHIVE_PRODUCTS_TABLE = "ArchiveProductsTable"
+    FETCHERS_LOCK_TABLE = "FetcherLocks"
+    SCRAPER_STATS_TABLE = "ScraperStats"

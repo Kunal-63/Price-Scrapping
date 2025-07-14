@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from boto3.session import Session
 
 from fetch_scripts.fetch_ebay import EbayFetcher
@@ -10,6 +10,7 @@ from fetch_scripts.fetch_rebag import RebagFetcher
 from fetch_scripts.fetch_stockx import StockXFetcher
 from utils.email import send_email
 from config.aws import AwsConfig
+from utils.global_lock import GlobalLockManager
 
 # Map source to fetcher class only
 FETCHER_MAP = {
@@ -63,8 +64,6 @@ class Scheduler:
         print(f"🔁 {len(due)} product(s) due for fetch.")
 
         product_ids = {product_id for product_id, _ in due}
-
-        # Load all product metadata once
         product_data_map = {}
         missing_products = []
 
@@ -76,7 +75,6 @@ class Scheduler:
                 print(f"⚠️ Product not found: {product_id}")
                 missing_products.append(product_id)
 
-        # Group by source
         grouped = {}
         for product_id, source in due:
             if source not in FETCHER_MAP:
@@ -86,31 +84,45 @@ class Scheduler:
             if product:
                 grouped.setdefault(source, []).append(product)
 
-        # Run all fetchers
         tasks = []
-        for source, product_list in grouped.items():
+        for source, products in grouped.items():
             fetcher_cls = FETCHER_MAP[source]
-            tasks.append(self.run_source_group(source, product_list, fetcher_cls))
+            tasks.append(self.run_source_group(source, products, fetcher_cls))
 
         await asyncio.gather(*tasks)
 
-        # Send summary
-        summary = f"✅ {sum(len(p) for p in grouped.values())} products fetched:\n"
+        # Summary
+        total = sum(len(p) for p in grouped.values())
+        summary = f"✅ {total} products fetched:\n"
         for source, items in grouped.items():
             summary += f"- {source}: {len(items)}\n"
 
         if missing_products:
-            summary += f"\n❌ Missing {len(missing_products)} product(s) in FinalProductsTable:\n"
+            summary += f"\n❌ Missing {len(missing_products)} product(s):\n"
             summary += "\n".join(f"- {pid}" for pid in missing_products)
 
         send_email("🗂️ Scraper Run Summary", summary)
 
 async def poll_every_hour():
     scheduler = Scheduler()
+    lock = GlobalLockManager()
 
     while True:
-        print(f"🕐 Running scheduler at {datetime.utcnow().isoformat()}...")
-        await scheduler.run_due_fetchers()
+        now_iso = datetime.utcnow().isoformat()
+        print(f"🕐 Running scheduler at {now_iso}...")
+
+        if lock.is_locked():
+            print("⏭️ Skipping run — another scraper is running.")
+        else:
+            lock.acquire("schedule_fetchers")
+            start_time = datetime.utcnow()
+
+            try:
+                await scheduler.run_due_fetchers()
+            finally:
+                time_taken = (datetime.utcnow() - start_time).total_seconds()
+                lock.release(time_taken=time_taken)
+
         print("💤 Sleeping for 1 hour...\n")
         await asyncio.sleep(3600)
 

@@ -4,7 +4,7 @@ import uuid
 
 class ProductModel:
     def __init__(self, base_data: dict, category: str):
-        self.id = f'{base_data.get("url", "")} | {datetime.utcnow().date().isoformat()}'
+        self.id = base_data.get('id', f'{base_data.get("url", "")} | {datetime.utcnow().date().isoformat()}')
         self.product_id = base_data.get("product_id", str(uuid.uuid4()))
         self.title = base_data.get("title", "")
         self.listing_price = Decimal(str(base_data.get("listing_price", 0)))

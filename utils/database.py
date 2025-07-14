@@ -24,3 +24,7 @@ def is_duplicate_today(url: str) -> bool:
     )
 
     return len(response.get("Items", [])) > 0
+
+def is_duplicate_by_id(item_id: str) -> bool:
+    response = product_table.get_item(Key={"id": item_id})
+    return "Item" in response
