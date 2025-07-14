@@ -32,7 +32,7 @@ class GoogleFetcher:
             all_items.extend(response.get("Items", []))
 
         self.logger.info(f"📦 Total items fetched from DynamoDB: {len(all_items)}")
-        return all_items
+        return all_items[:20]
 
     def update_run_tracker(self, product_id, source="google"):
         now = datetime.utcnow().isoformat()
