@@ -35,7 +35,7 @@ class EbayFetcher:
             all_items.extend(response.get("Items", []))
 
         self.logger.info(f"📦 Total items fetched from DynamoDB: {len(all_items)}")
-        return all_items[:100]
+        return all_items[:10]
     
     def update_stats(self, source: str, active: int, sold: int, products_ran: int, time_taken: float):
         now = datetime.utcnow().isoformat()
@@ -50,7 +50,7 @@ class EbayFetcher:
                     "total_sold": sold,
                     "products_ran": products_ran,
                     "time_taken": round(time_taken, 2),
-                    "timestamp": now  # optional field for sorting
+                    "timestamp": now 
                 }
             )
             self.logger.info(
