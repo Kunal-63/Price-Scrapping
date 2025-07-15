@@ -99,12 +99,15 @@ class ProductSearchEngine:
             fetch(self.stockx_scraper, "StockX"),
         ]
 
-        if category and category.lower() == "watches":
-            tasks.append(fetch(self.watchcharts, "WatchCharts"))
-            tasks.append(fetch(self.chrono24, "Chrono24"))
-        else:
-            tasks.append(dummy())
-            tasks.append(dummy())
+        # if category and category.lower() == "watches":
+        #     tasks.append(fetch(self.watchcharts, "WatchCharts"))
+        #     tasks.append(fetch(self.chrono24, "Chrono24"))
+        # else:
+        #     tasks.append(dummy())
+        #     tasks.append(dummy())
+        
+        tasks.append(dummy())
+        tasks.append(dummy())
 
         tasks.extend([
             fetch(self.fashionphile, "Fashionphile"),
