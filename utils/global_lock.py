@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from boto3.session import Session
 from config.aws import AwsConfig
+from decimal import Decimal
 
 class GlobalLockManager:
     def __init__(self, task_id="global_scraper_lock", ttl_minutes=30):
@@ -42,7 +43,7 @@ class GlobalLockManager:
 
         if time_taken is not None:
             update_expr += ", time_taken = :tt"
-            expr_attr_vals[":tt"] = round(time_taken, 2)
+            expr_attr_vals[":tt"] = Decimal(str(round(time_taken, 2)))
 
         self.lock_table.update_item(
             Key={"task_id": self.task_id},
