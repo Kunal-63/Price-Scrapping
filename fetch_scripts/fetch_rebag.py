@@ -1,4 +1,5 @@
 import asyncio
+from decimal import Decimal
 import time
 from datetime import datetime, timedelta
 import uuid
@@ -61,7 +62,7 @@ class RebagFetcher:
                     "run_id": run_id,
                     "total_results": total_results,
                     "products_ran": products_ran,
-                    "time_taken": round(time_taken, 2),
+                    "time_taken": Decimal(str(round(time_taken, 2))),
                     "timestamp": now
                 }
             )

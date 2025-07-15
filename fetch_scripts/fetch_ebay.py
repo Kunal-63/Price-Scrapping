@@ -10,6 +10,7 @@ from scrappers.ebay import EbayScraper
 from config.scrapper_config import Config
 from config.scrapping_tracker_config import ScrappingTrakcerConfig
 from config.aws import AwsConfig
+from decimal import Decimal
 
 class EbayFetcher:
     def __init__(self, concurrency: int = 20):
@@ -50,7 +51,7 @@ class EbayFetcher:
                     "total_sold": sold,
                     "total_results": active + sold,
                     "products_ran": products_ran,
-                    "time_taken": round(time_taken, 2),
+                    "time_taken": Decimal(str(round(time_taken, 2))),
                     "timestamp": now 
                 }
             )

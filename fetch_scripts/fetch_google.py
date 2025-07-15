@@ -10,6 +10,7 @@ from utils.logger import get_logger
 from scrappers.serp import SerpAPISearcher
 from config.scrapper_config import Config
 from config.scrapping_tracker_config import ScrappingTrakcerConfig
+from decimal import Decimal
 
 class GoogleFetcher:
     def __init__(self, concurrency: int = 20):
@@ -59,7 +60,7 @@ class GoogleFetcher:
                     "run_id": run_id,
                     "total_results": total_results,
                     "products_ran": products_ran,
-                    "time_taken": round(time_taken, 2),
+                    "time_taken": Decimal(str(round(time_taken, 2))),
                     "timestamp": now
                 }
             )

@@ -10,6 +10,7 @@ from scrappers.fashionphile import FashionphileScraper
 from config.scrapper_config import Config
 from config.scrapping_tracker_config import ScrappingTrakcerConfig
 from config.aws import AwsConfig
+from decimal import Decimal
 
 
 class FashionphileFetcher:
@@ -50,7 +51,7 @@ class FashionphileFetcher:
                     "run_id": run_id,
                     "total_results": total_results,
                     "products_ran": products_ran,
-                    "time_taken": round(time_taken, 2),
+                    "time_taken": Decimal(str(round(time_taken, 2))),
                     "timestamp": now
                 }
             )
