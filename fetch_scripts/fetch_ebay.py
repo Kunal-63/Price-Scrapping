@@ -48,6 +48,7 @@ class EbayFetcher:
                     "run_id": run_id,
                     "total_active": active,
                     "total_sold": sold,
+                    "total_results": active + sold,
                     "products_ran": products_ran,
                     "time_taken": round(time_taken, 2),
                     "timestamp": now 

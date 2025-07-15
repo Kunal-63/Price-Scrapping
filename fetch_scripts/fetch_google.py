@@ -105,7 +105,7 @@ class GoogleFetcher:
         results = await asyncio.gather(*tasks)
 
         total_time = time.time() - start_all
-        total_results = sum(results)
+        total_results = sum(len(r) for r in results)
         products_ran = len(items)
 
         self.update_stats("google", total_results, products_ran, total_time)

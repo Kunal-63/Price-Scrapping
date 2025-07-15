@@ -103,7 +103,13 @@ class FashionphileFetcher:
 
         start_all = time.time()
         tasks = [asyncio.create_task(self.process_item(item)) for item in items]
-        await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks)
+
+        total_time = time.time() - start_all
+        total_results = sum(len(r) for r in results)
+        products_ran = len(items)
+
+        self.update_stats("farfetch", total_results, products_ran, total_time)
 
         total_time = time.time() - start_all
         self.logger.info(f"✅ All items processed in {total_time:.2f} seconds")
