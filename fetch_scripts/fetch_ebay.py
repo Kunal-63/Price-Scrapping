@@ -109,9 +109,9 @@ class EbayFetcher:
         total_time = time.time() - start_all
 
         # Accumulate stats
-        total_active = sum(len(res.get("active", [])) for res in results if res)
-        total_sold = sum(len(res.get("sold", [])) for res in results if res)
-        products_ran = len(items)
+        total_active = sum(len(res["active"]) if res and isinstance(res.get("active"), list) else 0 for res in results)
+        total_sold = sum(len(res["sold"]) if res and isinstance(res.get("sold"), list) else 0 for res in results)
+        products_ran = len([r for r in results if r])
 
         self.update_stats("ebay", total_active, total_sold, products_ran, total_time)
         self.logger.info(f"✅ All items processed in {total_time:.2f} seconds")
