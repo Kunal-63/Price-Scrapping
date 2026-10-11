@@ -8,7 +8,9 @@ import anthropic
 
 class AnthropicRefiner:
     def __init__(self):
-        self.api_key = "os.environ.get("ANTHROPIC_API_KEY", "")"
+        self.api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+        if not self.api_key:
+            raise RuntimeError("Set ANTHROPIC_API_KEY before creating AnthropicRefiner")
         self.client = anthropic.Anthropic(api_key=self.api_key)
         # Use whichever Claude model suits your needs
         self.model = "claude-3-5-sonnet-20240620"
@@ -175,3 +177,5 @@ class AnthropicRefiner:
         )
 
         return self.call_claude(prompt).strip() or "Not present"
+
+

@@ -196,3 +196,10 @@ fabric.properties
 
 # idea folder, uncomment if you don't need it
  .idea
+# Local credentials must not be tracked.
+.env.*
+!.env.example
+*.pem
+*.key
+ghp_*
+github_pat_*

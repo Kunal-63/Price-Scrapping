@@ -633,3 +633,17 @@ Thank you for taking the time to review this documentation.
 If you have any questions or require further assistance, please don't hesitate to contact us.
 
 We are committed to ensuring a smooth and successful experience with your project.
+## Credential configuration and cleanup
+
+Set `ANTHROPIC_API_KEY` in the process environment before using
+`AnthropicRefiner`. Initialization fails with a configuration error when it is
+missing. `.env.example` lists the variable without a credential; this module does
+not automatically load an environment file. Use the shell or your deployment's
+secret manager to supply it.
+
+The October 2026 cleanup removed an embedded Anthropic API key, a GitHub token
+artifact, and a private-key file from the current tree. The repository remains
+private. Old commits and previously downloaded copies can still contain those
+values. The credential owners must revoke or rotate any previously usable token
+and replace any deployment identity using the removed private key. These values
+were not exercised during cleanup, and deletion is not proof of revocation.
