@@ -1,37 +1,166 @@
-# Price-Scrapper Documentation
+# Price Scrapper
+
+> **Enterprise-Grade Distributed Multi-Marketplace Web Scraping & AI-Assisted Price Aggregation Engine**
+
+[![Python Version](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.116.1-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![AWS DynamoDB](https://img.shields.io/badge/AWS-DynamoDB-4053D6.svg?logo=amazon-aws&logoColor=white)](https://aws.amazon.com/dynamodb/)
+[![Anthropic Claude](https://img.shields.io/badge/Anthropic-Claude--3-D97706.svg?logo=anthropic&logoColor=white)](https://www.anthropic.com/)
+[![Scrapfly](https://img.shields.io/badge/Scrapfly-Integrated-FF5722.svg)](https://scrapfly.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+---
 
 ## Table of Contents
 
-1. [Project Structure](#project-structure)
-2. [Setup & Installation](#setup--installation)
-3. [Core Components](#core-components)
-4. [Adding a New Scrapper](#adding-a-new-scrapper)
-5. [API Endpoints](#api-endpoints)
-6. [Utilities & Helpers](#utilities--helpers)
-7. [Testing & Debugging](#testing--debugging)
-8. [Best Practices](#best-practices)
-9. [Troubleshooting](#troubleshooting)
-10. [Git Branch](#git-branch)
-11. [Table Structures](#table-structures)
-12. [Threshold](#threshold)
-13. [Other File Contents](#other-file-contents)
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [System Architecture](#system-architecture)
+- [Project Directory Structure](#project-directory-structure)
+- [Supported Marketplaces & Thresholds](#supported-marketplaces--thresholds)
+- [Prerequisites & Installation](#prerequisites--installation)
+- [Environment Configuration](#environment-configuration)
+- [DynamoDB Database Schema](#dynamodb-database-schema)
+- [REST API Reference](#rest-api-reference)
+  - [1. Search & Ingest (`POST /insert/`)](#1-search--ingest-post-insert)
+  - [2. Query Products (`POST /get_product/`)](#2-query-products-post-get_product)
+  - [3. Count by Source (`GET /count_by_source/`)](#3-count-by-source-get-count_by_source)
+  - [4. Filter by Condition (`GET /products_by_condition/`)](#4-filter-by-condition-get-products_by_condition)
+  - [5. Missing Products Audit (`GET /missing-products`)](#5-missing-products-audit-get-missing-products)
+- [Batch Scripts & Schedulers](#batch-scripts--schedulers)
+  - [Continuous Hourly Scheduler](#continuous-hourly-scheduler)
+  - [Run All Fetchers Concurrently](#run-all-fetchers-concurrently)
+  - [Automated 30-Day Archival Pipeline](#automated-30-day-archival-pipeline)
+  - [Table Management Utility](#table-management-utility)
+- [Adding a New Scraper](#adding-a-new-scraper)
+- [Production Deployment & Runbook](#production-deployment--runbook)
+- [Security & Best Practices](#security--best-practices)
+- [Author & Maintenance](#author--maintenance)
 
-## Project Structure
+---
+
+## Overview
+
+**Price Scrapper** is an asynchronous, distributed data extraction and price intelligence engine designed to aggregate, analyze, and track product pricing across 13+ global secondary marketplaces for luxury goods, streetwear, sneakers, fine jewelry, and luxury watches.
+
+The system combines:
+1. **High-concurrency web scraping** powered by Scrapfly (with headless browser rendering, proxy rotation, and anti-scraping bypass).
+2. **Reverse image discovery** using SerpAPI Google Lens / Reverse Image engine to locate products by image.
+3. **AI query refinement and semantic validation** using Anthropic Claude to infer product attributes, sizes, conditions, and geographic locations.
+4. **Hybrid similarity scoring** blending RapidFuzz string distance and SentenceTransformers semantic embeddings to filter out scraping false positives.
+5. **Serverless persistence and state management** on AWS DynamoDB, featuring distributed locking, continuous scheduled monitoring, and automated 30-day price archival.
+
+---
+
+## Key Features
+
+- **Multi-Marketplace Coverage:** Out-of-the-box support for eBay, StockX, Farfetch, Fashionphile, Chrono24, WatchCharts, Rebag, The RealReal, Grailed, Google Shopping, SerpAPI, Flight Club, GOAT, and Vestiaire Collective.
+- **Asynchronous & High-Throughput:** Built on Python's `asyncio` and `aiohttp`/`httpx` primitives with configurable concurrency semaphores per marketplace to maximize throughput without exceeding rate limits.
+- **AI-Powered Query Refinement:** Leverages the Anthropic Claude API to expand fuzzy search queries, extract normalized sizes (shoes/apparel), standardize condition ratings, and resolve seller locations.
+- **Visual Product Discovery:** Reverse image search integration via SerpAPI, enabling search by product image URL.
+- **Dual-Layer Similarity Filter:** Employs a weighted combination of RapidFuzz token matching and SentenceTransformers neural embeddings to ensure listings match the target product above per-marketplace threshold boundaries.
+- **Distributed State & Concurrency Control:** Uses DynamoDB-backed distributed locks (`FetcherLocks`) to prevent concurrent task collision and duplicate runs.
+- **Automated Lifecycle & Archival:** Runs a continuous scheduler with configurable scraping intervals per marketplace and executes daily automated 30-day data archival into aggregated historical average price records.
+- **Real-Time API & Batch Daemons:** Exposes a clean FastAPI REST interface for on-demand search and queries, alongside background daemons for scheduled scraping and monitoring.
+
+---
+
+## System Architecture
+
+```mermaid
+flowchart TD
+    subgraph Clients["Clients & Upstream Services"]
+        API_Client["API Clients / Frontend"]
+        Cron_Service["Scheduler / Cron Daemons"]
+    end
+
+    subgraph ServiceLayer["FastAPI Application Layer"]
+        FastAPI_App["FastAPI Service (main.py / api/routes.py)"]
+        Endpoints["/insert/ | /get_product/ | /count_by_source/ | /products_by_condition/"]
+    end
+
+    subgraph IntelligenceLayer["AI & Intelligence Engine"]
+        Engine["ProductSearchEngine (utils/product_engine.py)"]
+        ClaudeAI["AnthropicRefiner (Claude 3.5 Sonnet / Haiku)"]
+        SerpImg["ImageSearcher (SerpAPI Reverse Image)"]
+        Similarity["Hybrid Matcher (RapidFuzz + Embeddings)"]
+    end
+
+    subgraph ScrapingLayer["Marketplace Scrapers (scrappers/)"]
+        eBay["eBay (Active & Sold)"]
+        StockX["StockX"]
+        Farfetch["Farfetch"]
+        Fashionphile["Fashionphile"]
+        Chrono24["Chrono24"]
+        WatchCharts["WatchCharts"]
+        Rebag["Rebag"]
+        RealReal["The RealReal"]
+        Grailed["Grailed"]
+        GoogleShop["Google Shopping"]
+        ScrapflyProxy["Scrapfly Anti-Scraping / Render JS"]
+    end
+
+    subgraph StorageLayer["AWS DynamoDB Storage"]
+        ProductsTable[("ProductsTable (Active / Sold)")]
+        FinalProductsTable[("FinalProductsTable (Master Catalog)")]
+        TrackerTable[("ScraperRunTracker (Next/Last Run)")]
+        ArchiveTable[("ArchiveProductsTable (30-day Summaries)")]
+        LocksTable[("FetcherLocks (Global Lock Manager)")]
+        StatsTable[("ScraperStats (Run Telemetry)")]
+    end
+
+    subgraph Automation["Background Daemons"]
+        HourlySched["Hourly Scheduler (schedule_fetchers.py)"]
+        RunAll["Batch Refresh (run_all_fetchers.py)"]
+        Archiver["Archival Daemon (archive_tables.py)"]
+        SMTPAlerts["SMTP Alert Notifications"]
+    end
+
+    API_Client --> FastAPI_App
+    FastAPI_App --> Endpoints
+    Endpoints --> Engine
+
+    Cron_Service --> HourlySched
+    Cron_Service --> RunAll
+    Cron_Service --> Archiver
+
+    HourlySched --> Engine
+    RunAll --> Engine
+    Archiver --> ProductsTable
+    Archiver --> ArchiveTable
+    Archiver --> SMTPAlerts
+
+    Engine --> ClaudeAI
+    Engine --> SerpImg
+    Engine --> ScrapflyProxy
+    ScrapflyProxy --> eBay & StockX & Farfetch & Fashionphile & Chrono24 & WatchCharts & Rebag & RealReal & Grailed & GoogleShop
+    eBay & StockX & Farfetch & Fashionphile & Chrono24 & WatchCharts & Rebag & RealReal & Grailed & GoogleShop --> Similarity
+    Similarity --> ProductsTable
+
+    HourlySched --> TrackerTable
+    HourlySched --> LocksTable
+    HourlySched --> StatsTable
+    HourlySched --> FinalProductsTable
+```
+
+---
+
+## Project Directory Structure
 
 ```
 Price-Scrapper/
-│
 ├── api/
-│   └── routes.py
+│   ├── __init__.py
+│   └── routes.py                      # FastAPI route definitions and endpoint handlers
 │
 ├── config/
 │   ├── __init__.py
-│   ├── aws.py
-│   ├── email.py
-│   ├── scrapper_config.py
-│   └── scrapping_tracker_config.py
+│   ├── aws.py                         # AWS DynamoDB credentials and table name mappings
+│   ├── email.py                       # SMTP notification configuration
+│   ├── scrapper_config.py             # Scrapfly, SerpAPI, and Gemini API keys
+│   └── scrapping_tracker_config.py    # Marketplace scraping frequency intervals (in hours)
 │
-├── fetch_scripts/
+├── fetch_scripts/                     # Asynchronous batch runners per marketplace
 │   ├── __init__.py
 │   ├── fetch_ebay.py
 │   ├── fetch_farfetch.py
@@ -40,167 +169,306 @@ Price-Scrapper/
 │   ├── fetch_rebag.py
 │   └── fetch_stockx.py
 │
-├── models/
+├── models/                            # Domain entity data models
 │   ├── __init__.py
-│   └── product_item.py
+│   └── product_item.py                # Standardized product dictionary builder
 │
-├── schemas/
+├── schemas/                           # Pydantic validation schemas
 │   ├── __init__.py
-│   ├── product_item.py
-│   ├── productId_input.py
-│   └── search_input.py
+│   ├── productId_input.py             # Schema for ID-based lookups and filters
+│   ├── product_item.py                # Schema for product payload representation
+│   └── search_input.py                # Schema for search and insertion requests
 │
-├── scrappers/
+├── scrappers/                         # Marketplace-specific scraping implementations
 │   ├── __init__.py
-│   ├── chrono24.py
-│   ├── ebay.py
-│   ├── farfetch.py
-│   ├── fashionphile.py
-│   ├── flightclub.py
-│   ├── goat.py
-│   ├── google_shopping.py
-│   ├── grailed.py
-│   ├── realreal.py
-│   ├── rebag.py
-│   ├── serp.py
-│   ├── stockx.py
-│   ├── vestiaire.py
-│   └── watchcharts.py
+│   ├── chrono24.py                    # Chrono24 luxury watch scraper
+│   ├── ebay.py                        # eBay active and sold listings scraper
+│   ├── farfetch.py                    # Farfetch luxury fashion scraper
+│   ├── fashionphile.py                # Fashionphile pre-owned luxury handbag scraper
+│   ├── flightclub.py                  # Flight Club sneaker scraper
+│   ├── goat.py                        # GOAT marketplace scraper
+│   ├── google_shopping.py             # Google Shopping scraper
+│   ├── grailed.py                     # Grailed designer and streetwear scraper
+│   ├── realreal.py                    # The RealReal luxury consignment scraper
+│   ├── rebag.py                       # Rebag designer handbag and watch scraper
+│   ├── serp.py                        # SerpAPI Google search scraper
+│   ├── stockx.py                      # StockX market data scraper
+│   ├── vestiaire.py                   # Vestiaire Collective luxury fashion scraper
+│   └── watchcharts.py                 # WatchCharts market index scraper
 │
-├── utils/
+├── utils/                             # Core utilities and helper modules
 │   ├── __init__.py
-│   ├── antropic.py
-│   ├── database.py
-│   ├── email.py
-│   ├── global_lock.py
-│   ├── image_search.py
-│   ├── logger.py
-│   ├── product_engine.py
-│   └── utility.py
+│   ├── antropic.py                    # Anthropic Claude AI refiner for query & metadata extraction
+│   ├── database.py                    # DynamoDB deduplication and existence check helpers
+│   ├── email.py                       # SMTP alert dispatch module
+│   ├── global_lock.py                 # Distributed lock manager backed by DynamoDB
+│   ├── image_search.py                # SerpAPI reverse image search utility
+│   ├── logger.py                      # Per-scraper daily rotating logger
+│   ├── product_engine.py              # Central search orchestrator and multi-source aggregator
+│   └── utility.py                     # Dual-layer fuzzy string + semantic embedding matcher
 │
-├── logs/
-│
-├── archive_tables.py
-├── main.py
-├── README.md
-├── requirement.txt
-├── run_all_fetchers.py
-├── run_engine.py
-├── schedule_fetchers.py
-├── tables.py
-├── test.py
-├── ghp_9u7axFfBvNOHiFtyo5owmtn0JEVtaF4.txt
+├── archive_tables.py                  # Daily maintenance job: 30-day price archival & rollup
+├── main.py                            # FastAPI application entrypoint
+├── requirements.txt                   # Project Python dependencies
+├── requirement.txt                    # Project Python dependencies (alias)
+├── run_all_fetchers.py                # Parallel batch fetcher across all supported platforms
+├── run_engine.py                      # Alternative one-product-across-all-scrapers runner
+├── schedule_fetchers.py               # Continuous hourly background scheduler daemon
+├── tables.py                          # DynamoDB schema creation and table management CLI
+├── .env.example                       # Template for environment variables
+└── README.md                          # Comprehensive project documentation
 ```
 
-## Setup & Installation
+---
+
+## Supported Marketplaces & Thresholds
+
+To eliminate noise, counterfeit titles, and false positives, every candidate listing is evaluated against a **hybrid similarity score**:
+
+$$\text{Combined Score} = (0.5 \times \text{RapidFuzz WRatio}) + (0.5 \times \text{SentenceTransformer Cosine Similarity})$$
+
+A candidate listing is accepted only if $\text{Combined Score} \ge \text{Threshold}$.
+
+| Marketplace | Category Focus | Scraping Mechanism | Concurrency | Threshold Limit |
+|---|---|---|---|---|
+| **eBay** | Multi-category, Sneaker, Luxury | Scrapfly HTML + JS Render (Active & Sold) | Medium | `0.80` |
+| **StockX** | Sneakers, Streetwear, Collectibles | Scrapfly JSON / REST API | High | `0.70` |
+| **Farfetch** | Luxury Apparel, Shoes, Handbags | Scrapfly HTML Parser | Medium | `0.84` |
+| **Fashionphile** | Ultra-luxury Handbags, Jewelry | Scrapfly HTML Parser | Medium | `0.60` |
+| **Rebag** | Designer Bags, Watches, Fine Jewelry | Scrapfly HTML / API | Medium | `0.70` |
+| **The RealReal** | Luxury Consignment Fashion | Scrapfly HTML Parser | Medium | `0.80` |
+| **Chrono24** | Luxury & Vintage Watches | Scrapfly HTML Parser | Low | `0.75` |
+| **WatchCharts** | Watch Market Indices & Transactions | Scrapfly HTML Parser | Low | `0.70` |
+| **Grailed** | Menswear, Archival Streetwear | Scrapfly HTML Parser | Medium | `0.75` |
+| **Google Shopping** | Broad Aggregated E-Commerce | SerpAPI / Scrapfly | Medium | `0.75` |
+| **Flight Club** | Footwear & Sneakers | Direct / Scrapfly | Medium | `0.75` |
+| **GOAT** | Sneakers & Apparel | Direct / Scrapfly | Medium | `0.75` |
+| **Vestiaire Collective** | European & US Pre-Owned Luxury | Scrapfly HTML Parser | Medium | `0.70` |
+
+---
+
+## Prerequisites & Installation
+
+### Prerequisites
+
+- **Python 3.12+** (tested with Python 3.12, 3.13, and 3.14)
+- **AWS Account** with DynamoDB read/write permissions
+- **Scrapfly API Account** (for web scraping proxy & anti-bot bypass)
+- **Anthropic Claude API Key** (for query refinement & metadata extraction)
+- **SerpAPI Key** (optional, for reverse image search and Google Shopping)
+
+### Installation Steps
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/Auricore/Price-Scrapper.git
-   cd Price-Scrapper
+   git clone https://github.com/Kunal-63/Price-Scrapping.git
+   cd Price-Scrapping
    ```
 
-2. **Install dependencies**
+2. **Create and activate a virtual environment:**
    ```bash
-   Install python3.12
+   # Linux / macOS
+   python3 -m venv venv
+   source venv/bin/activate
+
+   # Windows (PowerShell)
+   python -m venv venv
+   .\venv\Scripts\Activate.ps1
+   ```
+
+3. **Install project dependencies:**
+   ```bash
+   pip install --upgrade pip
    pip install -r requirements.txt
    ```
 
-3. **Configure AWS credentials**
-
-4. **Set up DynamoDB tables**
-
-5. **Configure API keys:**
-   Add your API keys (e.g., Scrapfly, SerpAPI, Anthropic) to config/
-
-6. **Run the batch engine**
+4. **Initialize DynamoDB Tables:**
+   Make sure your AWS credentials are configured, then create the required DynamoDB tables:
    ```bash
-   python run_engine.py
+   python tables.py
    ```
 
-## Core Components
+5. **Start the FastAPI Application:**
+   ```bash
+   uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+   ```
+   The interactive API documentation will be available at `http://localhost:8000/docs`.
 
-### api/
-Contains the API route definitions and logic for handling HTTP requests. This is where endpoints are defined for interacting with the scrapper system.
+---
 
-### config/
-Holds configuration files and settings, such as AWS credentials, email settings, and scrapper-specific configurations. These files centralize environment-specific and sensitive information.
+## Environment Configuration
 
-### fetch_scripts/
-Includes scripts responsible for fetching data from various sources (e.g., eBay, Farfetch, Google, etc.). Each script typically handles the data retrieval logic for a specific platform.
+Copy `.env.example` to `.env` or set the variables in your execution environment:
 
-### models/
-Defines the core data models used throughout the project, such as representations of product items. These models are often used for database interactions and data validation.
+```bash
+cp .env.example .env
+```
 
-### schemas/
-Contains schema definitions for data validation and serialization/deserialization, often used with API endpoints to ensure correct data formats (e.g., input and output schemas).
+| Variable | Description | Default | Required? |
+|---|---|---|---|
+| `ANTHROPIC_API_KEY` | Anthropic Claude API Key for query refinement & extraction | *None* | **Yes** |
+| `SCRAPFLY_KEY` | Scrapfly API key for web scraping & proxy rotation | *None* | **Yes** |
+| `SERPAPI_KEY` | SerpAPI key for Google Reverse Image & Shopping | *None* | Optional |
+| `AWS_ACCESS_KEY_ID` | AWS IAM Access Key ID | *None* | **Yes** |
+| `AWS_SECRET_ACCESS_KEY` | AWS IAM Secret Access Key | *None* | **Yes** |
+| `AWS_REGION` | AWS Region hosting the DynamoDB tables | `us-east-1` | No |
+| `PRODUCT_TABLE` | Main product listings DynamoDB table | `ProductsTable` | No |
+| `SCRAPER_TRACKING_TABLE`| Tracking table for scheduled runs per product | `ScraperRunTracker` | No |
+| `FINAL_PRODUCT_TABLE` | Master catalog table of products to track | `FinalProductsTable`| No |
+| `ARCHIVE_PRODUCTS_TABLE`| 30-day historical average price table | `ArchiveProductsTable`| No |
+| `FETCHERS_LOCK_TABLE` | Distributed locks table | `FetcherLocks` | No |
+| `SCRAPER_STATS_TABLE` | Telemetry & execution statistics table | `ScraperStats` | No |
+| `EMAIL_HOST` | SMTP server host | `smtp.gmail.com` | No |
+| `EMAIL_PORT` | SMTP server port | `587` | No |
+| `EMAIL_USER` | SMTP username / sender email | *None* | No |
+| `EMAIL_PASS` | SMTP application password | *None* | No |
+| `EMAIL_TO` | Alert recipient email address | *None* | No |
 
-### scrappers/
-Implements the actual web scrapers for different platforms (e.g., eBay, StockX, Grailed, etc.). Each file typically contains the scraping logic for a specific website.
+---
 
-### utils/
-Provides utility modules and helper functions used across the project, such as database utilities, logging, email sending, image searching, and other shared logic.
+## DynamoDB Database Schema
 
-### logs/
-A directory intended for storing log files generated during the execution of the application, useful for debugging and monitoring.
+The engine relies on six structured DynamoDB tables:
 
-## Adding a New Scrapper
+### 1. `ProductsTable` (Main Product Listings)
+Stores scraped active and sold product records from all platforms.
+- **Partition Key:** `Id` (`String`, composite hash of listing URL + date)
+- **Global Secondary Index (GSI):** `product_id-index` on `product_id` for fast product-level queries.
 
-1. Create a new file in scrappers/ (e.g., scrappers/newplatform.py).
-2. Implement a class with a search() method.
-3. Add a fetcher script in fetch_scripts/ if batch fetching is needed.
-4. Register the scraper in utils/product_engine.py for API integration.
+| Attribute | Type | Description |
+|---|---|---|
+| `Id` | String | Primary Key (URL + Date identifier) |
+| `product_id` | String | Master catalog product identifier (GSI) |
+| `title` | String | Extracted product title from marketplace |
+| `listing_price` | Number | Normalized price in numeric format |
+| `currency` | String | Currency code (e.g., `USD`, `EUR`) |
+| `url` | String | Canonical URL of the listing |
+| `image_url` | String | Direct URL of the primary product image |
+| `condition` | String | Item condition (e.g., `New`, `Pre-owned`, `Excellent`) |
+| `seller` | String | Marketplace seller name or store username |
+| `location` | String | Item or seller geographical location |
+| `top_rated` | Boolean| Flag indicating if the seller has top-rated status |
+| `source` | String | Marketplace source identifier (`ebay`, `stockx`, etc.) |
+| `size` | String | Normalized item size extracted by Claude AI |
+| `category` | String | Category classification (e.g., `sneakers`, `handbags`) |
+| `is_sold` | Boolean| Indicates if the listing represents a completed/sold transaction |
+| `created_at` | String | ISO 8601 creation timestamp |
 
-## API Endpoints
+### 2. `ScraperRunTracker` (Interval Scheduling State)
+Coordinates when each product was last crawled and when the next scrape is due.
+- **Partition Key:** `product_id` (`String`)
+- **Sort Key:** `source` (`String`)
 
-### 1. /insert/ (POST)
+| Attribute | Type | Description |
+|---|---|---|
+| `product_id` | String | Product ID |
+| `source` | String | Marketplace source identifier |
+| `last_run` | String | Timestamp of the most recent scrape execution |
+| `next_run` | String | Timestamp when the scraper is next eligible to execute |
 
-**Purpose: Search for products (by text or image) and store results.**
+### 3. `FinalProductsTable` (Master Catalog)
+Contains the master catalog of items targeted for price monitoring.
+- **Partition Key:** `product_id` (`String`)
 
-**Sample Request**
-```json
+### 4. `ArchiveProductsTable` (30-Day Historical Summaries)
+Stores aggregated average pricing per product and source calculated across 30-day windows.
+- **Partition Key:** `product_id` (`String`)
+
+| Attribute | Type | Description |
+|---|---|---|
+| `product_id` | String | Product ID |
+| `Date` | Map | Dictionary mapping dates to average price per marketplace |
+
+### 5. `FetcherLocks` (Distributed Lock Manager)
+Coordinates execution across workers to prevent concurrent scraping tasks on the same target.
+- **Partition Key:** `task_id` (`String`)
+
+| Attribute | Type | Description |
+|---|---|---|
+| `task_id` | String | Lock identifier (e.g., `global_fetcher_lock`) |
+| `locked_at` | String | Timestamp when the lock was acquired |
+| `expires_at` | String | Lock expiration timestamp (TTL safety) |
+| `script_name` | String | Script name that acquired the lock |
+| `status` | String | Status (`LOCKED`, `COMPLETED`, `FAILED`) |
+| `time_taken` | Number | Execution duration in seconds |
+
+### 6. `ScraperStats` (Telemetry & Performance Metrics)
+Records execution telemetry for analytics and monitoring.
+- **Partition Key:** `Source` (`String`)
+- **Sort Key:** `run_id` (`String`)
+
+| Attribute | Type | Description |
+|---|---|---|
+| `Source` | String | Scraper platform identifier |
+| `run_id` | String | Unique run identifier (UUID) |
+| `products_ran` | Number | Count of products processed during the run |
+| `total_results` | Number | Total listings extracted |
+| `total_active` | Number | Total active listings found |
+| `total_sold` | Number | Total sold/completed listings found |
+| `time_taken` | Number | Run execution duration in seconds |
+| `timestamp` | String | ISO 8601 run completion timestamp |
+
+---
+
+## REST API Reference
+
+### 1. Search & Ingest (`POST /insert/`)
+
+Initiates a multi-marketplace real-time search for a product (via text query or reverse image search), filters listings using similarity thresholds, and saves valid results to DynamoDB.
+
+**Request:**
+```http
 POST /insert/
+Content-Type: application/json
+
 {
-  "query": "Nike Air Jordan 1",
+  "query": "Jordan 1 Retro High OG Chicago Lost and Found",
   "category": "sneakers",
-  "product_id": "optional-id",
-  "image_url": "https://example.com/image.jpg"
+  "product_id": "prod_jordan_chicago_01",
+  "image_url": "https://example.com/chicago.jpg"
 }
 ```
 
-**Response**
+**Response (`200 OK`):**
 ```json
 {
-  "time_taken_seconds": 2.13,
-  "result_count": 12,
+  "time_taken_seconds": 3.84,
+  "result_count": 18,
   "results": [
     {
-      "title": "Nike Air Jordan 1 Retro",
-      "listing_price": "200",
+      "title": "Nike Air Jordan 1 Retro High OG Chicago Lost & Found DZ5485-612",
+      "listing_price": 285.0,
       "currency": "USD",
-      "url": "https://ebay.com/...",
-      "condition": "New",
-      "seller": "trusted_seller",
-      "location": "USA",
-      "source": "Ebay",
-      "..."
+      "url": "https://www.ebay.com/itm/...",
+      "image_url": "https://i.ebayimg.com/...",
+      "condition": "New with box",
+      "seller": "kicks_vault",
+      "location": "United States",
+      "top_rated": true,
+      "source": "ebay",
+      "size": "10.5",
+      "category": "sneakers"
     }
   ]
 }
 ```
 
-### 2. /get_product/ (POST)
+---
 
-**Purpose: Retrieve products by product ID or search query, with filtering and sorting.**
+### 2. Query Products (`POST /get_product/`)
 
-**Sample Request**
-```json
+Retrieves product listings from DynamoDB by product ID or query, with support for price range filtering, sorting, source grouping, and pagination.
+
+**Request:**
+```http
 POST /get_product/
+Content-Type: application/json
+
 {
-  "product_id": "abc123",
+  "product_id": "prod_jordan_chicago_01",
   "filters": {
-    "min_price": "5000",
-    "max_price": "15000"
+    "min_price": "200",
+    "max_price": "500"
   },
   "limit": 10,
   "sort_by": "listing_price",
@@ -209,13 +477,22 @@ POST /get_product/
 }
 ```
 
-**Response**
+**Response (`200 OK`):**
 ```json
 {
   "results": [
     {
-      "product": { ... },
-      "score": 98
+      "product": {
+        "Id": "a1b2c3d4...",
+        "product_id": "prod_jordan_chicago_01",
+        "title": "Air Jordan 1 Retro High Chicago Lost and Found",
+        "listing_price": 275.0,
+        "currency": "USD",
+        "source": "stockx",
+        "condition": "New",
+        "size": "10"
+      },
+      "score": 96
     }
   ],
   "last_evaluated_key": null,
@@ -224,426 +501,223 @@ POST /get_product/
 }
 ```
 
-### 3. /count_by_source/ (GET)
+---
 
-**Purpose: Get product counts grouped by their source/platform.**
+### 3. Count by Source (`GET /count_by_source/`)
 
-**Sample Request:**
+Returns inventory distribution across marketplaces for a given product or all tracked products.
+
+**Request:**
+```http
+GET /count_by_source/?product_id=prod_jordan_chicago_01
 ```
-GET /count_by_source/?product_id=abc123
-```
 
-**Response**
+**Response (`200 OK`):**
 ```json
 {
   "product_source_counts": {
-    "472b5d3f410092ff": {
-      "ebay": 51,
-      "google_shopping": 35,
-      "stockx": 5
-    },
-    "a6ab70c72996bfce": {
-      "google_shopping": 21,
-      "ebay": 7,
-      "rebag": 2,
-      "stockx": 2
+    "prod_jordan_chicago_01": {
+      "ebay": 42,
+      "stockx": 8,
+      "flightclub": 5,
+      "goat": 12
     }
   }
 }
 ```
 
-### 4. /products_by_condition/ (GET)
+---
 
-**Purpose: Retrieve products filtered by their condition (e.g., new, used).**
+### 4. Filter by Condition (`GET /products_by_condition/`)
 
-**Sample Request:**
-```
+Retrieves listings matching a specified condition (e.g., `New`, `Pre-owned`, `Excellent`).
+
+**Request:**
+```http
 GET /products_by_condition/?condition=New
 ```
 
-**Response**
+**Response (`200 OK`):**
 ```json
 {
   "results": [
-    { "product": { ... }, "score": 100 }
+    {
+      "product": {
+        "title": "Rolex Submariner Date 126610LN",
+        "listing_price": 14200.0,
+        "source": "chrono24",
+        "condition": "New"
+      },
+      "score": 100
+    }
   ]
 }
 ```
 
-### 5. /missing-products
+---
 
-**Purpose: Retrieve products that are not present in ProductsTable but exists in FinalProductsTable**
+### 5. Missing Products Audit (`GET /missing-products`)
 
-**Response**
+Performs an audit between `ProductsTable` and `FinalProductsTable` to identify master catalog items that currently have no scraped records.
+
+**Request:**
+```http
+GET /missing-products
+```
+
+**Response (`200 OK`):**
 ```json
 [
-  "8db0ee0b5a63bdae",
-  "65c03d1bc457938b",
-  "7439f5cf09cc3653",
-  "..."
+  "prod_rolex_daytona_116500",
+  "prod_hermes_birkin_25_epsom",
+  "prod_audemars_royal_oak_15500"
 ]
 ```
 
-## Utilities & Helpers
+---
 
-The utils folder contains utility modules and helper functions that provide shared functionality across the entire Price-Scrapper project. These utilities are designed to be reusable and modular, supporting various aspects of the application such as database operations, logging, email handling, image searching, and more. Here's a brief overview of each file:
+## Batch Scripts & Schedulers
 
-### anthropic.py
-Implements the AnthropicRefiner class, which uses the Anthropic Claude API to:
-- Refine product search queries using AI, optionally based on image filenames.
-- Score product relevance to a search query.
-- Extract product size and condition from titles.
-- Standardize and extract geographic locations from product data.
-- All methods are designed to return concise, AI-generated results for use in product search and metadata enrichment.
+### Continuous Hourly Scheduler
 
-### database.py
-Provides utility functions for interacting with an AWS DynamoDB table:
-- Checks if a product URL is a duplicate for the current day.
-- Checks if a product with a given ID already exists.
+Runs continuously in the background to scrape products due for updates based on the intervals configured in `config/scrapping_tracker_config.py`.
 
-### email.py
-Contains a function to send emails using SMTP:
-- Uses configuration from config/email.py.
-- Sends an email with a subject and body to a configured recipient.
-
-### global_lock.py
-Implements a GlobalLockManager class to coordinate distributed locking using DynamoDB.
-- Allows scripts to acquire and release a global lock (e.g., to prevent multiple fetchers from running simultaneously).
-- Lock status and expiration are managed in a DynamoDB table.
-- Includes methods to check if a lock is active, acquire a lock, and release it (optionally recording execution time).
-
-### image_search.py
-Defines an ImageSearcher class for reverse image search using SerpAPI.
-- Sends an image URL to SerpAPI's Google Reverse Image engine.
-- Extracts and returns the most relevant product or object name from the API response.
-
-### logger.py
-Provides a get_logger function to configure and retrieve a logger for the application.
-- Sets up both console and file logging with a consistent format.
-- Log files are named per scraper and rotated daily.
-- Ensures only one handler is attached per logger instance.
-
-### product_engine.py
-Implements the ProductSearchEngine class, which orchestrates product search across multiple platforms.
-- Integrates various scrapers (eBay, StockX, Farfetch, etc.), image search, and query refinement.
-- Supports asynchronous search and result aggregation.
-- Uses utility modules for logging, image search, and query refinement.
-- Prepares and returns combined search results from multiple sources.
-
-## Testing & Debugging
-
-- Manual testing: Use tools like Postman or curl to hit API endpoints.
-- Logs: Check the logs/ directory for daily log files.
-- Error handling: All major errors are logged with stack traces.
-
-## Best Practices
-
-- Use async/await for all network and I/O operations.
-- Limit concurrency in each scrapper to avoid rate-limiting or bans.
-- Normalize all product data before storing.
-- Log only important events and errors to keep logs clean.
-- Keep API keys and credentials secure.
-
-## Troubleshooting
-
-- **No results from a scrapper:**
-  Check API keys, site structure changes, or rate limits.
-- **DynamoDB errors:**
-  Ensure tables and indexes exist and credentials are correct.
-- **Slow performance:**
-  Tune concurrency settings and check for blocking code in scrappers.
-- **API errors:**
-  Check logs for stack traces and error messages.
-
-## Git Branch
-
-### main
-It contains the code with fetching product details page, which follows one product for all scrappers method
-
-### optimized
-It contains the code without anti scrapping protection, render_js, and reduced timed out. It follows one scrapper for all the products
-
-## Table Structures
-
-### ProductsTable
-
-| Field | Type | Description |
-|-------|------|-------------|
-| Id | String | Primary Key (URL \| DATE) |
-| url | string | url |
-| product_id | string | Product ID (GSI for fast lookup) |
-| title | string | Product title |
-| listing_price | number | Price |
-| currency | string | Currency (default: USD) |
-| condition | string | Product condition |
-| seller | string | Seller/platform |
-| location | string | Product/seller location |
-| top_rated | bool | Top-rated flag |
-| source | string | Source marketplace |
-| size | string | Product size |
-| category | string | Product category |
-| created_at | string | ISO timestamp |
-
-### ScraperRunTracker
-
-| Field | Type | Description |
-|-------|------|-------------|
-| product_id | String | Primary key |
-| source | String | Contains the source type |
-| last_run | Timestamp | Time stamp of last time script runnned |
-| next_run | Timestamp | Stores the timestamp for the script to be runned in future |
-
-### ArchiveTable
-
-| Field | Type | Description |
-|-------|------|-------------|
-| product_id | string | Primary key (unique product id) |
-| Date | Dict | Contains avg prices of sources |
-
-### FetcherLocks
-
-| Field | Type | Description |
-|-------|------|-------------|
-| **task_id** | **String** | **It is primary key for fetcher locks** |
-| **expires_at** | **String (Timestamp)** | **It stores timestamps of expiration time** |
-| **locked_at** | **String(timestamp)** | **It store the started time for the script** |
-| **script_name** | **String(timestamp)** | **It stores the script name** |
-| **status** | **String** | **Stores the status for the script** |
-| **time_taken** | **Decimal** | **Stores the time taken** |
-
-### ScraperStats
-
-| Field | Type | Description |
-|-------|------|-------------|
-| **Source** | **String** | **Primary key** |
-| **run_id** | **String** | **It is unique id for each run it is secondary key** |
-| **products_ran** | **Decimal** | **Stores the number of products ran** |
-| **time_taken** | **Decimal** | **Stores the time taken by run** |
-| **timestamp** | **String** | **Stores the timestamp** |
-| **total_active** | **Decimal** | **Stores the total active items fetched, used for ebay** |
-| **total_sold** | **Decimal** | **Stores the total sold products fetched, used for ebay** |
-| **total_results** | **Decimal** | **Stores total products fetched** |
-
-## Threshold
-
-### Threshold Limit
-
-`combined_similarity(title: str, query: str, threshold: float = 0.75) -> bool`
-
-This function measures how similar a product title is to a search query by combining two approaches:
-- Fuzzy string matching (using RapidFuzz's WRatio)
-- Semantic similarity (using Sentence Transformers embeddings)
-
-It computes a weighted average of the fuzzy and semantic scores, and returns True if the combined score meets or exceeds the specified threshold (default: 0.75). This helps determine if a product title is a good match for a user's search, even if the wording is different.
-
-| Source | Limit |
-|--------|-------|
-| **Chrono24** | **0.75** |
-| **Ebay** | **0.8** |
-| **FarFetch** | **0.84** |
-| **Fashionphile** | **0.6** |
-| **Google Shopping** | **0.75** |
-| **Grailed** | **0.75** |
-| **Real Real** | **0.8** |
-| **Rebag** | **0.7** |
-| **StockX (fetching top 5 products)** | **0.7** |
-| **Vestiaire** | **0.7** |
-| **WatchCharts** | **0.7** |
-
-## Other File Contents
-
-### fetch_scripts/
-
-Each fetcher script (eBay, Farfetch, Fashionphile, Google, Rebag, StockX) follows a similar workflow and performs the following grouped operations:
-
-1. **Fetching Product Items**
-   - Retrieves product items from a DynamoDB table, often paginating through all available items.
-   - Optionally accepts a custom list of products to process.
-
-2. **Asynchronous Processing with Concurrency Control**
-   - Uses Python's asyncio and semaphores to process multiple products in parallel, controlling the number of concurrent tasks for efficiency and API rate limiting.
-
-3. **Running Platform-Specific Searches**
-   - For each product, invokes the corresponding scraper (e.g., EbayScraper, FarfetchScraper) to fetch active and sold listings or relevant product data from the target marketplace.
-
-4. **Updating Run Trackers**
-   - After processing each product, updates a run tracker table in DynamoDB.
-   - Records when the product was last scraped and schedules the next run based on configurable intervals.
-
-5. **Updating Statistics**
-   - After all products are processed, aggregates results (e.g., total active/sold listings, total products processed, total time taken).
-   - Writes a summary of the run to a statistics table in DynamoDB for monitoring and analytics.
-
-6. **Logging**
-   - Uses a custom logger to record progress, results, errors, and timing information for each step of the process.
-
-| Operation | Description |
-|-----------|-------------|
-| Fetch Items | Retrieve products from DynamoDB |
-| Async Processing | Use asyncio and semaphores for concurrency |
-| Scrape Marketplace | Use platform-specific scraper for data fetching |
-| Update Run Tracker | Record last/next run for each product in DynamoDB |
-| Update Stats | Aggregate and store run statistics in DynamoDB |
-| Logging | Log all actions, results, and errors |
-
-### scrappers/
-
-Each scraper class is responsible for extracting product data from a specific marketplace. They share a common structure and set of operations:
-
-1. **Building and Sending Requests**
-   - Construct search URLs based on product queries and categories.
-   - Use Scrapfly (or similar) to fetch HTML or JSON data from the target site, often with retries and concurrency control.
-
-2. **Parsing and Extracting Data**
-   - Parse the fetched content using BeautifulSoup or JSON parsing.
-   - Extract relevant product details: title, price, URL, image, condition, seller, location, and more.
-   - Use utility functions for data cleaning, deduplication, and similarity checks.
-
-3. **Product Model Construction**
-   - Build a standardized product dictionary or model for each item found.
-   - Optionally enrich with additional metadata (e.g., size, location, condition).
-
-4. **Bulk Insertion**
-   - Insert or update product data in DynamoDB tables in batches, using thread pools for efficiency.
-
-5. **Logging and Error Handling**
-   - Log progress, results, and errors at each step for monitoring and debugging.
-   - Handle exceptions gracefully, skipping problematic items but continuing the scrape.
-
-### config/
-
-This folder contains configuration files that centralize and manage key settings, credentials, and constants used throughout the Price-Scrapper project. Each file defines a class with static variables for easy import and use across the codebase.
-
-#### aws.py
-Defines the AwsConfig class, which holds AWS and DynamoDB configuration:
-- AWS region, access keys, and username (placeholders for credentials).
-- Table names for products, tracking, archiving, locking, and statistics.
-
-#### email.py
-Defines the EmailConfig class for email settings:
-- SMTP host and port.
-- Email user, password, and recipient address for sending notifications or alerts.
-
-#### scrapper_config.py
-Defines the Config class for API keys and default values:
-- API keys for SerpAPI, Scrapfly, and Gemini (used for scraping and AI tasks).
-- Default image URL for use when no product image is available.
-
-#### scrapping_tracker_config.py
-Defines the ScrappingTrakcerConfig class for scheduling:
-- Specifies how often (in hours) each marketplace should be scraped (e.g., eBay every 24 hours, Farfetch every 72 hours, etc.).
-
-### archive_tables.py
-
-- Runs daily at 2:00 AM.
-- Finds product records in DynamoDB older than 30 days.
-- Groups and averages prices by product and source.
-- Archives summarized data to a separate archive table.
-- Deletes the original old records from the main table.
-- Sends an email report with the results.
-
-This process keeps the main product table optimized and preserves historical pricing data for future analysis.
-
-### run_all_fetchers.py
-
-**Purpose:** Runs all product data fetchers (scrapers) for supported platforms concurrently. This script is used to trigger a full data refresh from all sources.
-
-**How it Works:**
-- Imports fetcher classes for each platform from fetch_scripts/.
-- Instantiates each fetcher with a concurrency setting.
-- Uses asyncio.gather to run all fetchers in parallel.
-- Prints the total time taken for all fetchers to complete.
-
-### schedule_fetchers.py
-
-**Purpose:** Automates and schedules product data fetching for specific products and sources, based on a schedule stored in DynamoDB. It is designed for continuous, periodic scraping and can be run as a background service.
-
-**How it Works:**
-- Uses a Scheduler class to:
-  - Check the ScraperRunTracker table for products due for scraping (based on next_run timestamp).
-  - Fetch product details from FinalProductsTable.
-  - Group products by source and run the appropriate fetcher for each group.
-  - Send a summary email after each run.
-- The main loop (poll_every_hour) runs the scheduler every hour.
-
-```python
-class Scheduler:
-    def get_due_products(self):
-        # Returns list of (product_id, source) tuples due for scraping
-
-    def get_product_details(self, product_id):
-        # Returns product metadata from FinalProductsTable
-
-    async def run_source_group(self, source, products, fetcher_cls):
-        # Runs the fetcher for a group of products from the same source
-
-    async def run_due_fetchers(self):
-        # Orchestrates the fetching for all due products and sends summary email
-
-async def poll_every_hour():
-    scheduler = Scheduler()
-    while True:
-        await scheduler.run_due_fetchers()
-        await asyncio.sleep(3600)
-
-if __name__ == "__main__":
-    asyncio.run(poll_every_hour())
+```bash
+python schedule_fetchers.py
 ```
 
-This will continuously check for products due for scraping and fetch them every hour.
+**How it works:**
+1. Queries `ScraperRunTracker` for records where `next_run <= current_timestamp`.
+2. Resolves product metadata from `FinalProductsTable`.
+3. Groups overdue tasks by source marketplace.
+4. Executes platform fetchers asynchronously with semaphore-managed concurrency.
+5. Updates `ScraperRunTracker` with the new `next_run` timestamp.
+6. Dispatches an SMTP summary report upon completion.
 
-**Features:**
-- Dynamically determines which products need to be scraped.
-- Groups products by source for efficient fetching.
-- Sends a summary email after each run.
-- Handles missing products and unsupported sources gracefully.
+### Run All Fetchers Concurrently
 
-### tables.py
+Manually triggers an immediate, full-sweep refresh across all marketplaces:
 
-**Purpose:** Manages DynamoDB tables used by the project. Provides utilities to create, check, and delete tables and their contents.
+```bash
+python run_all_fetchers.py
+```
 
-**How it Works:**
-- Functions to create tables if they don't exist:
-  - create_table_if_not_exists: Generic table creation.
-  - create_archive_table: For archiving old product data.
-  - create_product_table: For main product storage, with a GSI on product_id.
-- Function to delete all items from a table:
-  - delete_all_items_from_table
-- The script can be run directly to perform table operations (e.g., delete all items from ProductsTable).
+### Automated 30-Day Archival Pipeline
 
-### run_engine.py
+Maintains database performance by rolling up listings older than 30 days:
 
-It fetches all the product but it is not used. It works on one product for all market places method
+```bash
+python archive_tables.py
+```
 
-## How to run scripts on ec2 session?
+**Workflow:**
+- Scans `ProductsTable` for items created more than 30 days ago.
+- Computes daily average prices grouped by `product_id` and `source`.
+- Persists summarized records into `ArchiveProductsTable`.
+- Deletes archived raw items from `ProductsTable`.
+- Sends an email summary report to the administrator.
 
-### Starting and Exiting
+### Table Management Utility
 
-- Start a new session: `tmux` or `tmux new -s session_name`
-- Run python file
-- Detach from a session: Press `Ctrl+b`, then `d`
-- List sessions: `tmux ls`
-- Attach to a session: `tmux attach -t session_name`
-- Kill a session: `tmux kill-session -t session_name`
+```bash
+# Create all DynamoDB tables if they don't already exist
+python tables.py
+
+# To inspect or delete table records during development, invoke helpers in tables.py
+```
 
 ---
 
-Thank you for taking the time to review this documentation.
+## Adding a New Scraper
 
-If you have any questions or require further assistance, please don't hesitate to contact us.
+To integrate a new marketplace (e.g., `Grailed` or `Poshmark`):
 
-We are committed to ensuring a smooth and successful experience with your project.
-## Credential configuration and cleanup
+1. **Create the Scraper Class:**
+   Create `scrappers/newmarket.py` inheriting standard patterns:
+   ```python
+   class NewMarketScraper:
+       def __init__(self, concurrency=5):
+           self.semaphore = asyncio.Semaphore(concurrency)
 
-Set `ANTHROPIC_API_KEY` in the process environment before using
-`AnthropicRefiner`. Initialization fails with a configuration error when it is
-missing. `.env.example` lists the variable without a credential; this module does
-not automatically load an environment file. Use the shell or your deployment's
-secret manager to supply it.
+       async def search(self, query: str, category: str = None) -> list:
+           # 1. Build search URL and request Scrapfly proxy
+           # 2. Parse HTML / JSON response with BeautifulSoup or json.loads
+           # 3. Construct ProductItem model
+           # 4. Filter using combined_similarity(title, query, threshold=0.75)
+           # 5. Insert valid items into ProductsTable
+           return results
+   ```
 
-The October 2026 cleanup removed an embedded Anthropic API key, a GitHub token
-artifact, and a private-key file from the current tree. The repository remains
-private. Old commits and previously downloaded copies can still contain those
-values. The credential owners must revoke or rotate any previously usable token
-and replace any deployment identity using the removed private key. These values
-were not exercised during cleanup, and deletion is not proof of revocation.
+2. **Add a Batch Fetcher Script:**
+   Create `fetch_scripts/fetch_newmarket.py` extending the batch fetcher pattern with pagination, tracker updates, and telemetry logging.
+
+3. **Register in Product Engine:**
+   Import and register the scraper inside `utils/product_engine.py` in `ProductSearchEngine.search()`.
+
+4. **Configure Threshold & Scheduling:**
+   - Define the similarity threshold limit in `utils/utility.py`.
+   - Set the scrape interval in `config/scrapping_tracker_config.py`.
+
+---
+
+## Production Deployment & Runbook
+
+### Deployment on AWS EC2 (Ubuntu / Amazon Linux)
+
+1. **System Packages:**
+   ```bash
+   sudo apt-get update && sudo apt-get install -y python3-pip python3-venv tmux git
+   ```
+
+2. **Clone & Setup:**
+   ```bash
+   git clone https://github.com/Kunal-63/Price-Scrapping.git
+   cd Price-Scrapping
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   ```
+
+3. **Configure Environment:**
+   Create `.env` with your production API keys and AWS IAM credentials.
+
+4. **Running with tmux:**
+   ```bash
+   # Start API server in tmux
+   tmux new -s price_api
+   uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
+   # Press Ctrl+B, then D to detach
+
+   # Start Scheduler Daemon in tmux
+   tmux new -s price_scheduler
+   python schedule_fetchers.py
+   # Press Ctrl+B, then D to detach
+   ```
+
+5. **Cron Configuration for 30-Day Archival:**
+   Add to `crontab -e`:
+   ```cron
+   # Run 30-day archival daily at 2:00 AM
+   0 2 * * * cd /home/ubuntu/Price-Scrapping && /home/ubuntu/Price-Scrapping/venv/bin/python archive_tables.py >> /var/log/price_archive.log 2>&1
+   ```
+
+6. **Log Monitoring:**
+   Daily rotating log files are saved to `logs/` (e.g., `logs/ebay_scrapper.log`, `logs/stockx_scrapper.log`).
+
+---
+
+## Security & Best Practices
+
+- **Never Commit Secrets:** Store all API keys (`ANTHROPIC_API_KEY`, `SCRAPFLY_KEY`, AWS credentials) in environment variables or an isolated `.env` file that is excluded in `.gitignore`.
+- **Anti-Scraping Compliance:** Always leverage Scrapfly's proxy rotation and respect per-marketplace rate limits to prevent IP blocks.
+- **Concurrency Safeguards:** Keep concurrency semaphores bounded (`5` to `20`) to prevent local socket exhaustion and proxy throttling.
+- **Data Deduplication:** `utils/database.py` enforces per-day URL deduplication to avoid redundant writes into DynamoDB.
+
+---
+
+## Author & Maintenance
+
+Maintained by **[Kunal Adwani](https://github.com/Kunal-63)**.
+
+- **GitHub:** [@Kunal-63](https://github.com/Kunal-63)
+- **Repository:** [https://github.com/Kunal-63/Price-Scrapping](https://github.com/Kunal-63/Price-Scrapping)
